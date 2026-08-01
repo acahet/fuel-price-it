@@ -46,16 +46,18 @@ export default function DistributoreApp() {
   const [locLabel, setLocLabel] = useState("");
   const [locStatus, setLocStatus] = useState("idle"); // idle | locating | ok | denied
   const [stations, setStations] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | loading | ok | error | cors
+  const [status, setStatus] = useState("idle"); // idle | loading | ok | error | geolocation_denied | cors
   const [lastUpdated, setLastUpdated] = useState(null);
   const abortRef = useRef(null);
 
   const locate = useCallback(() => {
     setLocStatus("locating");
     if (!navigator.geolocation) {
+      console.error("Geolocation unavailable: navigator.geolocation is not supported by this browser.");
       setCoords(FALLBACK_COORDS);
       setLocLabel(FALLBACK_COORDS.label);
       setLocStatus("denied");
+      setStatus("geolocation_denied");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -64,10 +66,12 @@ export default function DistributoreApp() {
         setLocLabel("Posizione attuale");
         setLocStatus("ok");
       },
-      () => {
+      (error) => {
+        console.error("Geolocation failed:", error);
         setCoords(FALLBACK_COORDS);
         setLocLabel(FALLBACK_COORDS.label);
         setLocStatus("denied");
+        setStatus("geolocation_denied");
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
@@ -135,6 +139,7 @@ export default function DistributoreApp() {
             {status === "ok" && cheapest && "PREZZO PIÙ BASSO NELLA ZONA"}
             {status === "ok" && !cheapest && "NESSUN DISTRIBUTORE TROVATO"}
             {status === "error" && "SERVIZIO NON RAGGIUNGIBILE"}
+            {status === "geolocation_denied" && "GEOLOCALIZZAZIONE NON DISPONIBILE"}
             {status === "idle" && "IN ATTESA DI POSIZIONE…"}
           </div>
           <div style={styles.pumpDigits}>
@@ -221,6 +226,19 @@ export default function DistributoreApp() {
                   l'Osservaprezzi ufficiale
                 </a>
                 .
+              </div>
+            </div>
+          </div>
+        )}
+
+        {locStatus === "denied" && (
+          <div style={{ ...styles.errorBox, marginBottom: 10 }}>
+            <AlertCircle size={16} color="#D2A24C" />
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Geolocalizzazione non disponibile</div>
+              <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5 }}>
+                Non è stato possibile ottenere la posizione attuale (permesso negato, timeout o sensore non disponibile).
+                Verrà usata una posizione predefinita finché non abiliti la geolocalizzazione nel browser.
               </div>
             </div>
           </div>
