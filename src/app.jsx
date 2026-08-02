@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown } from "lucide-react";
+import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown, Clock } from "lucide-react";
 
 const FUELS = [
   { id: "benzina", label: "Benzina", short: "B" },
@@ -16,6 +16,41 @@ const PRICE_TYPES = [
 const RADII = [3, 5, 10, 20, 30];
 
 const API_BASE = "https://prezzi-carburante.onrender.com/api/distributori";
+
+// Universal links (not maps:// / geo: custom schemes) so each also works as a plain
+// web fallback when the corresponding app isn't installed, e.g. on desktop.
+function mapLinks(lat, lon) {
+  return [
+    { id: "google", label: "Google Maps", url: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}` },
+    { id: "waze", label: "Waze", url: `https://waze.com/ul?ll=${lat}%2C${lon}&navigate=yes` },
+    { id: "apple", label: "Apple Maps", url: `https://maps.apple.com/?daddr=${lat},${lon}` },
+  ];
+}
+
+// Stations are legally required to report price changes within 8 days (art. 51 L.99/2009).
+// We flag anything older than 5 days as unverified, giving a margin before that legal deadline.
+const STALE_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000;
+
+// The API returns "data" as "DD/MM/YYYY HH:mm:ss" (Italian format), which isn't
+// reliably parsed by `new Date(string)` across browsers — parse it explicitly.
+function parseStationDate(str) {
+  if (typeof str !== "string") return null;
+  const [datePart, timePart] = str.split(" ");
+  const [day, month, year] = (datePart || "").split("/").map(Number);
+  const [hour, minute, second] = (timePart || "").split(":").map(Number);
+  if (!day || !month || !year) return null;
+  return new Date(year, month - 1, day, hour || 0, minute || 0, second || 0);
+}
+
+function formatRelativeTime(date) {
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (minutes < 1) return "pochi istanti fa";
+  if (minutes < 60) return `${minutes} min fa`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "ora" : "ore"} fa`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? "giorno" : "giorni"} fa`;
+}
 
 function useOdometer(value) {
   // returns a display string that "rolls" briefly when value changes
@@ -45,13 +80,14 @@ export default function DistributoreApp() {
   const [fuel, setFuel] = useState("benzina");
   const [priceType, setPriceType] = useState("self");
   const [priceAvailability, setPriceAvailability] = useState({ self: true, servito: true });
-  const [radius, setRadius] = useState(10);
+  const [radius, setRadius] = useState(3);
   const [coords, setCoords] = useState(null);
   const [locLabel, setLocLabel] = useState("");
   const [locStatus, setLocStatus] = useState("idle"); // idle | locating | ok | denied
   const [stations, setStations] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | loading | ok | error | geolocation_denied | cors
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [navMenuIndex, setNavMenuIndex] = useState(null);
   const abortRef = useRef(null);
 
   const locate = useCallback(() => {
@@ -96,8 +132,8 @@ export default function DistributoreApp() {
       const data = await res.json();
       const valid = Array.isArray(data)
         ? data
-            .map((s) => ({ ...s, prezzo: typeof s.prezzo === "number" ? s.prezzo : parseFloat(s.prezzo) }))
-            .filter((s) => Number.isFinite(s.prezzo))
+          .map((s) => ({ ...s, prezzo: typeof s.prezzo === "number" ? s.prezzo : parseFloat(s.prezzo) }))
+          .filter((s) => Number.isFinite(s.prezzo))
         : [];
 
       const hasSelf = valid.some((s) => s.self === true);
@@ -133,9 +169,20 @@ export default function DistributoreApp() {
     fetchStations();
   }, [fetchStations]);
 
+  const isStale = (s) => {
+    const d = parseStationDate(s.data);
+    return !d || Date.now() - d.getTime() > STALE_THRESHOLD_MS;
+  };
+
   // The list is ordered by distance (closest first), so the cheapest station in the zone
   // isn't necessarily #1 — find it separately to still surface it on the pump display.
-  const cheapest = stations.reduce((min, s) => (!min || s.prezzo < min.prezzo ? s : min), null);
+  // Prefer verified (recently-reported) prices for that headline number: an unverified price
+  // that "wins" on paper isn't worth sending someone to if it's stale.
+  const freshStations = stations.filter((s) => !isStale(s));
+  const cheapest = (freshStations.length ? freshStations : stations).reduce(
+    (min, s) => (!min || s.prezzo < min.prezzo ? s : min),
+    null
+  );
   const odoPrice = useOdometer(cheapest ? cheapest.prezzo : null);
 
   return (
@@ -148,6 +195,7 @@ export default function DistributoreApp() {
         .station-row:hover { background: #1C2E45; }
         .chip { transition: all .15s ease; }
         .chip:active { transform: scale(0.96); }
+        .nav-menu-item:hover { background: #1C2E45; }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
       `}</style>
 
@@ -187,6 +235,8 @@ export default function DistributoreApp() {
           {cheapest && (
             <div style={styles.pumpSub}>
               {cheapest.gestore} · a {parseFloat(cheapest.distanza).toFixed(1)} km
+              {parseStationDate(cheapest.data) && ` · ${formatRelativeTime(parseStationDate(cheapest.data))}`}
+              {isStale(cheapest) && <span style={styles.staleTagHero}>NON VERIFICATO</span>}
             </div>
           )}
         </div>
@@ -314,6 +364,8 @@ export default function DistributoreApp() {
 
         {stations.map((s, i) => {
           const isCheapest = s === cheapest;
+          const stationStale = isStale(s);
+          const updatedAt = parseStationDate(s.data);
           return (
             <div key={i} className="station-row" style={styles.row}>
               <div style={styles.rank}>{i + 1}</div>
@@ -321,6 +373,14 @@ export default function DistributoreApp() {
                 <div style={styles.gestore}>
                   {s.gestore || "Distributore"}
                   {isCheapest && <span style={styles.cheapestTag}>PIÙ ECONOMICO</span>}
+                  {stationStale && (
+                    <span
+                      style={styles.staleTag}
+                      title="Prezzo non aggiornato da oltre 5 giorni: potrebbe non essere più corretto (per legge gli impianti devono comunicare le variazioni entro 8 giorni)."
+                    >
+                      NON VERIFICATO
+                    </span>
+                  )}
                 </div>
                 <div style={styles.indirizzo}>{s.indirizzo}</div>
               </div>
@@ -329,6 +389,42 @@ export default function DistributoreApp() {
                   {s.prezzo.toFixed(3).replace(".", ",")}
                 </div>
                 <div style={styles.rowDist}>{parseFloat(s.distanza).toFixed(1)} km</div>
+                {updatedAt && (
+                  <div style={{ ...styles.freshness, ...(stationStale ? styles.freshnessStale : {}) }}>
+                    <Clock size={9} />
+                    {formatRelativeTime(updatedAt)}
+                  </div>
+                )}
+              </div>
+              <div style={styles.navWrap}>
+                <button
+                  onClick={() => setNavMenuIndex(navMenuIndex === i ? null : i)}
+                  style={styles.navBtn}
+                  title="Naviga verso questo distributore"
+                  aria-label="Naviga verso questo distributore"
+                >
+                  <Navigation size={15} />
+                </button>
+                {navMenuIndex === i && (
+                  <>
+                    <div style={styles.navMenuOverlay} onClick={() => setNavMenuIndex(null)} />
+                    <div style={styles.navMenu}>
+                      {mapLinks(s.latitudine, s.longitudine).map((m) => (
+                        <a
+                          key={m.id}
+                          href={m.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="nav-menu-item"
+                          style={styles.navMenuItem}
+                          onClick={() => setNavMenuIndex(null)}
+                        >
+                          {m.label}
+                        </a>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -513,6 +609,28 @@ const styles = {
     padding: "1px 4px",
     verticalAlign: "middle",
   },
+  staleTag: {
+    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: "0.5px",
+    color: "#E28B6D",
+    border: "1px solid #E28B6D55",
+    borderRadius: 4,
+    padding: "1px 4px",
+    verticalAlign: "middle",
+    cursor: "help",
+  },
+  staleTagHero: {
+    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: "0.5px",
+    color: "#E28B6D",
+    border: "1px solid #E28B6D55",
+    borderRadius: 4,
+    padding: "1px 4px",
+  },
   indirizzo: {
     fontSize: 11.5,
     color: "#8A98AA",
@@ -523,6 +641,55 @@ const styles = {
   rowRight: { textAlign: "right" },
   rowPrice: { fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 700 },
   rowDist: { fontSize: 11, color: "#5B7091", marginTop: 2 },
+  freshness: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 3,
+    fontSize: 10,
+    color: "#5B7091",
+    marginTop: 2,
+  },
+  freshnessStale: { color: "#E28B6D" },
+  navWrap: { position: "relative", flexShrink: 0 },
+  navBtn: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    background: "#1B6E71",
+    border: "none",
+    borderRadius: 8,
+    color: "#EDE6D6",
+    cursor: "pointer",
+  },
+  navMenuOverlay: { position: "fixed", inset: 0, zIndex: 10 },
+  navMenu: {
+    position: "absolute",
+    right: 0,
+    top: "calc(100% + 6px)",
+    background: "#16263B",
+    border: "1px solid #2A3F5A",
+    borderRadius: 10,
+    padding: 6,
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    zIndex: 20,
+    minWidth: 150,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+  },
+  navMenuItem: {
+    padding: "8px 10px",
+    borderRadius: 6,
+    color: "#EDE6D6",
+    fontSize: 13,
+    fontWeight: 500,
+    textDecoration: "none",
+    whiteSpace: "nowrap",
+  },
   errorBox: {
     display: "flex",
     gap: 10,
