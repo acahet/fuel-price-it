@@ -45,6 +45,28 @@ npm run preview
 
 Pushing to `main` triggers [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which builds the app and publishes `dist/` to GitHub Pages. The Vite base path is set to `/fuel-price-it/` in [`vite.config.js`](vite.config.js) to match the Pages URL.
 
+## Branching & release workflow
+
+- Feature branches (`feature/*`) merge into `dev` for integration testing.
+- `dev` merges into `main` as a release, which auto-deploys to GitHub Pages.
+- `main` never receives feature branches directly.
+
+## Roadmap
+
+### Next
+- [ ] Interactive map view (Leaflet/MapLibre) — color-coded markers, click-to-scroll to list card
+
+### Then
+- [ ] Formal release process on top of the `dev` → `main` flow above: versioned/tagged releases and a changelog
+
+### Backlog
+- [ ] Trivy — dependency vulnerability scanning in CI
+- [ ] SonarQube — static analysis / code quality gate in CI
+- [ ] E2E tests
+
+### Dropped
+- Specialty fuel sub-types (Benzina Speciale / Gasolio Hi-Q) — the prezzi-carburante API doesn't expose these fuel variants, only benzina/gasolio/gpl/metano
+
 ## Project structure
 
 ```
