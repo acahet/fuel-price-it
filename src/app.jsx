@@ -79,6 +79,10 @@ function useOdometer(value) {
 export default function DistributoreApp() {
   const [fuel, setFuel] = useState("benzina");
   const [priceType, setPriceType] = useState("self");
+  // What's actually shown/filtered on — usually equal to `priceType`, but can diverge when
+  // that preference isn't offered for the current fuel (see fetchStations). Kept separate so
+  // switching fuel never permanently overwrites the user's actual Self/Servito preference.
+  const [effectivePriceType, setEffectivePriceType] = useState("self");
   const [priceAvailability, setPriceAvailability] = useState({ self: true, servito: true });
   const [radius, setRadius] = useState(3);
   const [coords, setCoords] = useState(null);
@@ -142,13 +146,15 @@ export default function DistributoreApp() {
 
       // GPL is essentially never self-service in Italy (safety regulation), and some fuels
       // only report one price type in a given area — fall back to whichever is actually offered.
+      // This only changes what's *displayed* (effectiveType), never the user's actual
+      // `priceType` preference, so switching back to a fuel that supports it restores their choice.
       let effectiveType = priceType;
       if (valid.length > 0) {
         const currentAvailable = priceType === "self" ? hasSelf : hasServito;
         const otherAvailable = priceType === "self" ? hasServito : hasSelf;
         if (!currentAvailable && otherAvailable) effectiveType = priceType === "self" ? "servito" : "self";
       }
-      if (effectiveType !== priceType) setPriceType(effectiveType);
+      setEffectivePriceType(effectiveType);
 
       // Sorted by distance, not price: a station saving a couple cents but 20km out of the
       // way isn't actually worth it — the list should reflect what's practical to drive to.
@@ -214,7 +220,7 @@ export default function DistributoreApp() {
         <div style={styles.pumpPanel}>
           <div style={styles.pumpLabel}>
             {status === "loading" && "AGGIORNAMENTO…"}
-            {status === "ok" && cheapest && `PREZZO PIÙ BASSO (${priceType === "self" ? "SELF" : "SERVITO"}) NELLA ZONA`}
+            {status === "ok" && cheapest && `PREZZO PIÙ BASSO (${effectivePriceType === "self" ? "SELF" : "SERVITO"}) NELLA ZONA`}
             {status === "ok" && !cheapest && "NESSUN DISTRIBUTORE TROVATO"}
             {status === "error" && "SERVIZIO NON RAGGIUNGIBILE"}
             {status === "geolocation_denied" && "CI DISPIACE, POSIZIONE NON DISPONIBILE"}
@@ -272,7 +278,7 @@ export default function DistributoreApp() {
                 title={disabled ? `${p.label} non disponibile in questa zona` : undefined}
                 style={{
                   ...styles.toggleBtn,
-                  ...(priceType === p.id ? styles.toggleBtnActive : {}),
+                  ...(effectivePriceType === p.id ? styles.toggleBtnActive : {}),
                   ...(disabled ? styles.toggleBtnDisabled : {}),
                 }}
               >
@@ -355,9 +361,9 @@ export default function DistributoreApp() {
 
         {status === "ok" && stations.length === 0 && (
           <div style={styles.emptyBox}>
-            Nessun distributore {priceType === "self" ? "Self" : "Servito"} trovato entro {radius} km.
-            {priceAvailability[priceType === "self" ? "servito" : "self"]
-              ? ` Prova a passare a ${priceType === "self" ? "Servito" : "Self"}.`
+            Nessun distributore {effectivePriceType === "self" ? "Self" : "Servito"} trovato entro {radius} km.
+            {priceAvailability[effectivePriceType === "self" ? "servito" : "self"]
+              ? ` Prova a passare a ${effectivePriceType === "self" ? "Servito" : "Self"}.`
               : " Prova ad ampliare il raggio di ricerca."}
           </div>
         )}
