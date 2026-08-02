@@ -92,7 +92,12 @@ export default function DistributoreApp() {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error("bad_response");
       const data = await res.json();
-      setStations(Array.isArray(data) ? data : []);
+      const valid = Array.isArray(data)
+        ? data
+            .map((s) => ({ ...s, prezzo: typeof s.prezzo === "number" ? s.prezzo : parseFloat(s.prezzo) }))
+            .filter((s) => Number.isFinite(s.prezzo))
+        : [];
+      setStations(valid);
       setStatus("ok");
       setLastUpdated(new Date());
     } catch (err) {
