@@ -1,15 +1,18 @@
 # Distributore — Prezzi Carburante
 
-A small React web app that finds the cheapest nearby fuel station in Italy. It geolocates the user (falling back to Manduria, Puglia if geolocation is denied), queries a public API for stations within a chosen radius, and highlights the lowest price for the selected fuel type.
+A small React web app that finds the cheapest nearby fuel station in Italy. It geolocates the user, queries a public API for stations within a chosen radius, and highlights the lowest price for the selected fuel type. If geolocation is denied or unavailable, it asks the user to retry rather than silently searching from a default location.
 
 Live demo: deployed via GitHub Pages on every push to `main`.
 
 ## Features
 
-- Geolocation with automatic fallback to a default location
+- Geolocation-based search; no default-location fallback if it's denied
 - Fuel type selector: Benzina, Gasolio, GPL, Metano
+- Self vs Servito toggle, with automatic fallback to whichever is actually available
 - Adjustable search radius (3–30 km)
-- List of nearby stations sorted by price, with the cheapest highlighted
+- List of nearby stations sorted by distance, with the cheapest price in the zone highlighted
+- Price freshness indicator, flagging prices unverified after 5 days
+- Navigate button per station (Google Maps / Waze / Apple Maps)
 - Handles missing/invalid price data and API/geolocation errors gracefully
 
 ## Tech stack
@@ -47,17 +50,27 @@ Pushing to `main` triggers [`.github/workflows/deploy.yml`](.github/workflows/de
 
 ## Branching & release workflow
 
-- Feature branches (`feature/*`) merge into `dev` for integration testing.
-- `dev` merges into `main` as a release, which auto-deploys to GitHub Pages.
+- Feature/fix branches (`feature/*`, `fix/*`) merge into `dev` for integration testing.
+- `dev` merges into `main` as a release, which auto-deploys to GitHub Pages ([`deploy.yml`](.github/workflows/deploy.yml)).
 - `main` never receives feature branches directly.
+
+### Cutting a release
+
+1. Make sure everything intended for the release is merged into `dev` and looks good there.
+2. Open a PR from `dev` into `main`.
+3. After it's merged, on `main`: bump the `version` in [`package.json`](package.json) (semver), and move the `[Unreleased]` section in [`CHANGELOG.md`](CHANGELOG.md) under a new `## [x.y.z] - YYYY-MM-DD` heading.
+4. Commit that as `Release vX.Y.Z`, then tag and push:
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+5. The tag push triggers [`release.yml`](.github/workflows/release.yml), which publishes a GitHub Release with auto-generated notes. `deploy.yml` already redeployed GitHub Pages when `main` was updated in step 2.
 
 ## Roadmap
 
 ### Next
 - [ ] Interactive map view (Leaflet/MapLibre) — color-coded markers, click-to-scroll to list card
-
-### Then
-- [ ] Formal release process on top of the `dev` → `main` flow above: versioned/tagged releases and a changelog
+- [ ] Favorite fuel type: ask once on first visit, remember it as the default (`feature/favorite-fuel-type`)
 
 ### Backlog
 - [ ] Trivy — dependency vulnerability scanning in CI
