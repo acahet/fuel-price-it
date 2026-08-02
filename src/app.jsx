@@ -17,6 +17,26 @@ const RADII = [3, 5, 10, 20, 30];
 
 const API_BASE = "https://prezzi-carburante.onrender.com/api/distributori";
 
+const FAVORITE_FUEL_KEY = "distributore.favoriteFuel";
+
+function readFavoriteFuel() {
+  try {
+    const saved = localStorage.getItem(FAVORITE_FUEL_KEY);
+    return FUELS.some((f) => f.id === saved) ? saved : null;
+  } catch {
+    // localStorage can throw in private-browsing modes on some browsers — just skip persistence.
+    return null;
+  }
+}
+
+function saveFavoriteFuel(id) {
+  try {
+    localStorage.setItem(FAVORITE_FUEL_KEY, id);
+  } catch {
+    // ignore — see readFavoriteFuel
+  }
+}
+
 // Universal links (not maps:// / geo: custom schemes) so each also works as a plain
 // web fallback when the corresponding app isn't installed, e.g. on desktop.
 function mapLinks(lat, lon) {
@@ -77,7 +97,9 @@ function useOdometer(value) {
 }
 
 export default function DistributoreApp() {
-  const [fuel, setFuel] = useState("benzina");
+  const [favoriteFuel] = useState(readFavoriteFuel);
+  const [fuel, setFuel] = useState(favoriteFuel || "benzina");
+  const [showFuelPrompt, setShowFuelPrompt] = useState(!favoriteFuel);
   const [priceType, setPriceType] = useState("self");
   // What's actually shown/filtered on — usually equal to `priceType`, but can diverge when
   // that preference isn't offered for the current fuel (see fetchStations). Kept separate so
@@ -204,6 +226,37 @@ export default function DistributoreApp() {
         .nav-menu-item:hover { background: #1C2E45; }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
       `}</style>
+
+      {showFuelPrompt && (
+        <div style={styles.fuelPromptOverlay}>
+          <div style={styles.fuelPromptCard}>
+            <Fuel size={22} color="#D2A24C" />
+            <div style={styles.fuelPromptTitle}>Quale carburante usi di solito?</div>
+            <div style={styles.fuelPromptHint}>
+              Lo useremo come predefinito ogni volta che apri l'app. Puoi cambiarlo quando vuoi.
+            </div>
+            <div style={styles.fuelPromptGrid}>
+              {FUELS.map((f) => (
+                <button
+                  key={f.id}
+                  className="chip"
+                  style={styles.fuelPromptBtn}
+                  onClick={() => {
+                    setFuel(f.id);
+                    saveFavoriteFuel(f.id);
+                    setShowFuelPrompt(false);
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <button style={styles.fuelPromptSkip} onClick={() => setShowFuelPrompt(false)}>
+              Salta, decido dopo
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* HERO — pump display */}
       <div style={styles.hero}>
@@ -459,6 +512,63 @@ const styles = {
     background: "linear-gradient(160deg, #16263B 0%, #0F1B2B 100%)",
     padding: "20px 20px 26px",
     borderBottom: "1px solid #1C2E45",
+  },
+  fuelPromptOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "#0A1420CC",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    zIndex: 100,
+  },
+  fuelPromptCard: {
+    background: "#16263B",
+    border: "1px solid #2A3F5A",
+    borderRadius: 16,
+    padding: "24px 20px",
+    maxWidth: 340,
+    width: "100%",
+    textAlign: "center",
+    boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
+  },
+  fuelPromptTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: "#EDE6D6",
+    marginTop: 10,
+  },
+  fuelPromptHint: {
+    fontSize: 12.5,
+    color: "#8A98AA",
+    lineHeight: 1.5,
+    marginTop: 6,
+    marginBottom: 18,
+  },
+  fuelPromptGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+  },
+  fuelPromptBtn: {
+    background: "#0A1420",
+    border: "1px solid #1C2E45",
+    borderRadius: 10,
+    padding: "14px 8px",
+    color: "#EDE6D6",
+    fontSize: 13.5,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  fuelPromptSkip: {
+    background: "none",
+    border: "none",
+    color: "#5B7091",
+    fontSize: 12.5,
+    marginTop: 14,
+    cursor: "pointer",
+    textDecoration: "underline",
   },
   heroTop: {
     display: "flex",
