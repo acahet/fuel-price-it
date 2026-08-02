@@ -8,10 +8,12 @@ const FUELS = [
   { id: "metano", label: "Metano", short: "M" },
 ];
 
-const RADII = [3, 5, 10, 20, 30];
+const PRICE_TYPES = [
+  { id: "self", label: "Self" },
+  { id: "servito", label: "Servito" },
+];
 
-// Fallback: Manduria, Puglia (used if geolocation is denied/unavailable)
-const FALLBACK_COORDS = { lat: 40.4062, lon: 17.6335, label: "Manduria (posizione predefinita)" };
+const RADII = [3, 5, 10, 20, 30];
 
 const API_BASE = "https://prezzi-carburante.onrender.com/api/distributori";
 
@@ -41,6 +43,8 @@ function useOdometer(value) {
 
 export default function DistributoreApp() {
   const [fuel, setFuel] = useState("benzina");
+  const [priceType, setPriceType] = useState("self");
+  const [priceAvailability, setPriceAvailability] = useState({ self: true, servito: true });
   const [radius, setRadius] = useState(10);
   const [coords, setCoords] = useState(null);
   const [locLabel, setLocLabel] = useState("");
@@ -54,8 +58,6 @@ export default function DistributoreApp() {
     setLocStatus("locating");
     if (!navigator.geolocation) {
       console.error("Geolocation unavailable: navigator.geolocation is not supported by this browser.");
-      setCoords(FALLBACK_COORDS);
-      setLocLabel(FALLBACK_COORDS.label);
       setLocStatus("denied");
       setStatus("geolocation_denied");
       return;
@@ -68,8 +70,6 @@ export default function DistributoreApp() {
       },
       (error) => {
         console.error("Geolocation failed:", error);
-        setCoords(FALLBACK_COORDS);
-        setLocLabel(FALLBACK_COORDS.label);
         setLocStatus("denied");
         setStatus("geolocation_denied");
       },
@@ -88,7 +88,9 @@ export default function DistributoreApp() {
     abortRef.current = controller;
     setStatus("loading");
     try {
-      const url = `${API_BASE}?latitude=${coords.lat}&longitude=${coords.lon}&distance=${radius}&fuel=${fuel}&results=15`;
+      // The API doesn't support filtering by self/servito server-side, and mixes both
+      // into one ranking, so we over-fetch and filter+re-sort by price type client-side.
+      const url = `${API_BASE}?latitude=${coords.lat}&longitude=${coords.lon}&distance=${radius}&fuel=${fuel}&results=40`;
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error("bad_response");
       const data = await res.json();
@@ -97,20 +99,43 @@ export default function DistributoreApp() {
             .map((s) => ({ ...s, prezzo: typeof s.prezzo === "number" ? s.prezzo : parseFloat(s.prezzo) }))
             .filter((s) => Number.isFinite(s.prezzo))
         : [];
-      setStations(valid);
+
+      const hasSelf = valid.some((s) => s.self === true);
+      const hasServito = valid.some((s) => s.self === false);
+      setPriceAvailability({ self: hasSelf, servito: hasServito });
+
+      // GPL is essentially never self-service in Italy (safety regulation), and some fuels
+      // only report one price type in a given area — fall back to whichever is actually offered.
+      let effectiveType = priceType;
+      if (valid.length > 0) {
+        const currentAvailable = priceType === "self" ? hasSelf : hasServito;
+        const otherAvailable = priceType === "self" ? hasServito : hasSelf;
+        if (!currentAvailable && otherAvailable) effectiveType = priceType === "self" ? "servito" : "self";
+      }
+      if (effectiveType !== priceType) setPriceType(effectiveType);
+
+      // Sorted by distance, not price: a station saving a couple cents but 20km out of the
+      // way isn't actually worth it — the list should reflect what's practical to drive to.
+      const filtered = valid
+        .filter((s) => s.self === (effectiveType === "self"))
+        .sort((a, b) => parseFloat(a.distanza) - parseFloat(b.distanza))
+        .slice(0, 15);
+      setStations(filtered);
       setStatus("ok");
       setLastUpdated(new Date());
     } catch (err) {
       if (err.name === "AbortError") return;
       setStatus("error");
     }
-  }, [coords, radius, fuel]);
+  }, [coords, radius, fuel, priceType]);
 
   useEffect(() => {
     fetchStations();
   }, [fetchStations]);
 
-  const cheapest = stations[0];
+  // The list is ordered by distance (closest first), so the cheapest station in the zone
+  // isn't necessarily #1 — find it separately to still surface it on the pump display.
+  const cheapest = stations.reduce((min, s) => (!min || s.prezzo < min.prezzo ? s : min), null);
   const odoPrice = useOdometer(cheapest ? cheapest.prezzo : null);
 
   return (
@@ -141,10 +166,10 @@ export default function DistributoreApp() {
         <div style={styles.pumpPanel}>
           <div style={styles.pumpLabel}>
             {status === "loading" && "AGGIORNAMENTO…"}
-            {status === "ok" && cheapest && "PREZZO PIÙ BASSO NELLA ZONA"}
+            {status === "ok" && cheapest && `PREZZO PIÙ BASSO (${priceType === "self" ? "SELF" : "SERVITO"}) NELLA ZONA`}
             {status === "ok" && !cheapest && "NESSUN DISTRIBUTORE TROVATO"}
             {status === "error" && "SERVIZIO NON RAGGIUNGIBILE"}
-            {status === "geolocation_denied" && "GEOLOCALIZZAZIONE NON DISPONIBILE"}
+            {status === "geolocation_denied" && "CI DISPIACE, POSIZIONE NON DISPONIBILE"}
             {status === "idle" && "IN ATTESA DI POSIZIONE…"}
           </div>
           <div style={styles.pumpDigits}>
@@ -185,11 +210,36 @@ export default function DistributoreApp() {
           ))}
         </div>
 
+        <div style={styles.toggleRow}>
+          {PRICE_TYPES.map((p) => {
+            const disabled = status === "ok" && !priceAvailability[p.id];
+            return (
+              <button
+                key={p.id}
+                className="chip"
+                disabled={disabled}
+                onClick={() => setPriceType(p.id)}
+                title={disabled ? `${p.label} non disponibile in questa zona` : undefined}
+                style={{
+                  ...styles.toggleBtn,
+                  ...(priceType === p.id ? styles.toggleBtnActive : {}),
+                  ...(disabled ? styles.toggleBtnDisabled : {}),
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+
         <div style={styles.metaRow}>
           <div style={styles.locInfo}>
             <MapPin size={13} color="#8A98AA" />
             <span style={styles.locText}>
-              {locStatus === "locating" ? "Localizzazione…" : locLabel}
+              {locStatus === "locating" && "Localizzazione…"}
+              {locStatus === "denied" && "Posizione non disponibile"}
+              {locStatus === "ok" && locLabel}
+              {locStatus === "idle" && ""}
             </span>
           </div>
 
@@ -240,36 +290,49 @@ export default function DistributoreApp() {
           <div style={{ ...styles.errorBox, marginBottom: 10 }}>
             <AlertCircle size={16} color="#D2A24C" />
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Geolocalizzazione non disponibile</div>
-              <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5 }}>
-                Non è stato possibile ottenere la posizione attuale (permesso negato, timeout o sensore non disponibile).
-                Verrà usata una posizione predefinita finché non abiliti la geolocalizzazione nel browser.
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Ci dispiace, ci serve la tua posizione</div>
+              <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5, marginBottom: 10 }}>
+                Non è stato possibile ottenere la posizione attuale (permesso negato, timeout o sensore non
+                disponibile). Senza la tua posizione non possiamo cercare i distributori vicino a te — per
+                evitare risultati fuorvianti non usiamo una località predefinita.
               </div>
+              <button onClick={locate} style={styles.retryBtn}>
+                Riprova
+              </button>
             </div>
           </div>
         )}
 
         {status === "ok" && stations.length === 0 && (
           <div style={styles.emptyBox}>
-            Nessun distributore trovato entro {radius} km. Prova ad ampliare il raggio di ricerca.
+            Nessun distributore {priceType === "self" ? "Self" : "Servito"} trovato entro {radius} km.
+            {priceAvailability[priceType === "self" ? "servito" : "self"]
+              ? ` Prova a passare a ${priceType === "self" ? "Servito" : "Self"}.`
+              : " Prova ad ampliare il raggio di ricerca."}
           </div>
         )}
 
-        {stations.map((s, i) => (
-          <div key={i} className="station-row" style={styles.row}>
-            <div style={styles.rank}>{i + 1}</div>
-            <div style={styles.rowMain}>
-              <div style={styles.gestore}>{s.gestore || "Distributore"}</div>
-              <div style={styles.indirizzo}>{s.indirizzo}</div>
-            </div>
-            <div style={styles.rowRight}>
-              <div style={{ ...styles.rowPrice, color: i === 0 ? "#D2A24C" : "#EDE6D6" }}>
-                {s.prezzo.toFixed(3).replace(".", ",")}
+        {stations.map((s, i) => {
+          const isCheapest = s === cheapest;
+          return (
+            <div key={i} className="station-row" style={styles.row}>
+              <div style={styles.rank}>{i + 1}</div>
+              <div style={styles.rowMain}>
+                <div style={styles.gestore}>
+                  {s.gestore || "Distributore"}
+                  {isCheapest && <span style={styles.cheapestTag}>PIÙ ECONOMICO</span>}
+                </div>
+                <div style={styles.indirizzo}>{s.indirizzo}</div>
               </div>
-              <div style={styles.rowDist}>{parseFloat(s.distanza).toFixed(1)} km</div>
+              <div style={styles.rowRight}>
+                <div style={{ ...styles.rowPrice, color: isCheapest ? "#D2A24C" : "#EDE6D6" }}>
+                  {s.prezzo.toFixed(3).replace(".", ",")}
+                </div>
+                <div style={styles.rowDist}>{parseFloat(s.distanza).toFixed(1)} km</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={styles.footer}>
@@ -362,6 +425,35 @@ const styles = {
     borderColor: "#1B6E71",
     color: "#EDE6D6",
   },
+  toggleRow: {
+    display: "flex",
+    gap: 4,
+    background: "#0A1420",
+    border: "1px solid #1C2E45",
+    borderRadius: 8,
+    padding: 3,
+    marginBottom: 12,
+  },
+  toggleBtn: {
+    flex: 1,
+    background: "transparent",
+    border: "none",
+    borderRadius: 6,
+    padding: "6px 4px",
+    color: "#8A98AA",
+    fontSize: 12.5,
+    fontWeight: 500,
+    cursor: "pointer",
+  },
+  toggleBtnActive: {
+    background: "#D2A24C",
+    color: "#0F1B2B",
+    fontWeight: 700,
+  },
+  toggleBtnDisabled: {
+    opacity: 0.35,
+    cursor: "not-allowed",
+  },
   metaRow: { display: "flex", alignItems: "center", gap: 10 },
   locInfo: { display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 },
   locText: {
@@ -410,6 +502,17 @@ const styles = {
   },
   rowMain: { flex: 1, minWidth: 0 },
   gestore: { fontSize: 14, fontWeight: 600, marginBottom: 2 },
+  cheapestTag: {
+    marginLeft: 6,
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: "0.5px",
+    color: "#D2A24C",
+    border: "1px solid #D2A24C55",
+    borderRadius: 4,
+    padding: "1px 4px",
+    verticalAlign: "middle",
+  },
   indirizzo: {
     fontSize: 11.5,
     color: "#8A98AA",
@@ -427,6 +530,16 @@ const styles = {
     border: "1px solid #2A3F5A",
     borderRadius: 10,
     padding: 14,
+  },
+  retryBtn: {
+    background: "#1B6E71",
+    border: "none",
+    borderRadius: 8,
+    padding: "8px 14px",
+    color: "#EDE6D6",
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: "pointer",
   },
   emptyBox: {
     textAlign: "center",
