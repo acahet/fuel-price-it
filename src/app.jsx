@@ -148,7 +148,7 @@ export default function DistributoreApp() {
             {status === "idle" && "IN ATTESA DI POSIZIONE…"}
           </div>
           <div style={styles.pumpDigits}>
-            {cheapest ? (
+            {cheapest && Number.isFinite(odoPrice) ? (
               <>
                 <span>{odoPrice.toFixed(3).replace(".", ",")}</span>
                 <span style={styles.pumpUnit}>€/L</span>
