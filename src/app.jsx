@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown, Clock, Award, ArrowRight } from "lucide-react";
+import { cellsForQuery } from "./geoGrid.js";
 
 const FUELS = [
   { id: "benzina", label: "Benzina", short: "B" },
@@ -17,7 +18,20 @@ const PRICE_TYPES = [
 
 const RADII = [3, 5, 10, 20, 30];
 
-const API_BASE = "https://prezzi-carburante.onrender.com/api/distributori";
+// Static snapshot built by scripts/fetch-mimit-data.js (see .github/workflows/fetch-prices.yml
+// for the daily refresh) directly from MIMIT's official open data, replacing the third-party
+// prezzi-carburante.onrender.com API — that API was found to lag MIMIT by ~2 days on average
+// and to be missing at least one live station outright. Sharded into a lat/lon grid (geoGrid.js)
+// so a query only ever downloads the handful of cells near the user, not all ~21k stations
+// in Italy — see MANIFEST_URL/cellUrl below.
+const DATA_DIR = `${import.meta.env.BASE_URL}data/stazioni`;
+const MANIFEST_URL = `${DATA_DIR}/index.json`;
+const cellUrl = (key) => `${DATA_DIR}/${key}.json`;
+
+// Cell responses are cached via the Cache API (not localStorage — the unzipped dataset would
+// blow past Safari's ~5MB localStorage cap) keyed by extraction date, so a new day's data
+// never serves stale cells and old days get swept automatically (see loadManifest below).
+const CACHE_PREFIX = "stazioni-";
 
 // Kill switch for the interactive map, independent of code changes: set
 // VITE_ENABLE_MAP=false in .env.local (or as a build-time env var in CI) to turn it off
@@ -67,6 +81,19 @@ function parseStationDate(str) {
   const [hour, minute, second] = (timePart || "").split(":").map(Number);
   if (!day || !month || !year) return null;
   return new Date(year, month - 1, day, hour || 0, minute || 0, second || 0);
+}
+
+const EARTH_RADIUS_KM = 6371;
+
+// Straight-line distance, not driving distance — matches what the old third-party API returned
+// (its `distanza` field), close enough at the 3-30km radii this app searches.
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function formatRelativeTime(date) {
@@ -264,7 +291,8 @@ export default function DistributoreApp() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [navMenuIndex, setNavMenuIndex] = useState(null);
   const [highlightedIndex, setHighlightedIndex] = useState(null);
-  const abortRef = useRef(null);
+  const [manifest, setManifest] = useState(null); // { generatedAt, extraction, stationCount, cellCount }
+  const cellCacheRef = useRef(new Map()); // cellKey -> station[], populated for this page load
   const rowRefs = useRef({});
 
   const handleMarkerClick = (i) => {
@@ -300,24 +328,113 @@ export default function DistributoreApp() {
     locate();
   }, [locate]);
 
+  // The manifest is tiny (a few hundred bytes) and only carries metadata (extraction date,
+  // counts) — fetched once up front so we know which Cache Storage bucket today's cells
+  // belong in. Actual station data is loaded per-cell, lazily, once coords are known (see
+  // fetchStations) — there's no point downloading anything before we know where to look.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(MANIFEST_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error("bad_response");
+        return res.json();
+      })
+      .then(async (data) => {
+        if (cancelled) return;
+        setManifest(data);
+        // Cell responses are immutable once written under a given extraction date, so old
+        // days' buckets are pure dead weight — sweep them instead of letting them accumulate.
+        if ("caches" in window) {
+          try {
+            const keys = await caches.keys();
+            await Promise.all(
+              keys
+                .filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE_PREFIX + data.extraction)
+                .map((k) => caches.delete(k))
+            );
+          } catch {
+            // Cache Storage can be unavailable (e.g. some private-browsing modes) — fine,
+            // loadCell falls back to a plain uncached fetch in that case too.
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Loads one geo cell's stations, preferring (in order): this page load's in-memory cache,
+  // the Cache Storage bucket for today's extraction, then the network — persisting to both
+  // caches as it goes. A 404 means the cell simply has no stations (common — most of the grid
+  // is sea/uninhabited), not a failure.
+  const loadCell = useCallback(
+    async (key) => {
+      if (cellCacheRef.current.has(key)) return cellCacheRef.current.get(key);
+      const url = cellUrl(key);
+      let cache = null;
+      if ("caches" in window && manifest) {
+        try {
+          cache = await caches.open(CACHE_PREFIX + manifest.extraction);
+        } catch {
+          cache = null;
+        }
+      }
+      let res = cache ? await cache.match(url) : null;
+      if (!res) {
+        res = await fetch(url);
+        // A missing cell (most of the grid — sea, mountains, empty land) should 404, but
+        // Vite's dev server SPA-fallback serves index.html (200, text/html) for unmatched
+        // static paths instead — check content-type too so dev behaves like production.
+        const isJson = res.headers.get("content-type")?.includes("json");
+        if (!res.ok || !isJson) {
+          cellCacheRef.current.set(key, []);
+          return [];
+        }
+        if (cache) cache.put(url, res.clone());
+      }
+      const stations = await res.json();
+      cellCacheRef.current.set(key, stations);
+      return stations;
+    },
+    [manifest]
+  );
+
   const fetchStations = useCallback(async () => {
     if (!coords) return;
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    if (!manifest) {
+      setStatus("loading");
+      return;
+    }
     setStatus("loading");
     try {
-      // The API doesn't support filtering by self/servito server-side, and mixes both
-      // into one ranking, so we over-fetch and filter+re-sort by price type client-side.
-      const url = `${API_BASE}?latitude=${coords.lat}&longitude=${coords.lon}&distance=${radius}&fuel=${fuel}&results=40`;
-      const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error("bad_response");
-      const data = await res.json();
-      const valid = Array.isArray(data)
-        ? data
-          .map((s) => ({ ...s, prezzo: typeof s.prezzo === "number" ? s.prezzo : parseFloat(s.prezzo) }))
-          .filter((s) => Number.isFinite(s.prezzo))
-        : [];
+      const cells = cellsForQuery(coords.lat, coords.lon, radius);
+      const cellStationLists = await Promise.all(cells.map(loadCell));
+
+      // Each station can offer both self and servito for a fuel — expand to one entry per
+      // price type, mirroring the shape the old per-query API used to return, so the
+      // filtering/sorting/availability logic below (and every component downstream) is unchanged.
+      const valid = [];
+      for (const list of cellStationLists) for (const s of list) {
+        const fuelPrices = s.prezzi[fuel];
+        if (!fuelPrices) continue;
+        const distanza = haversineKm(coords.lat, coords.lon, s.lat, s.lon);
+        if (distanza > radius) continue;
+        for (const [priceKind, info] of Object.entries(fuelPrices)) {
+          valid.push({
+            gestore: s.gestore,
+            indirizzo: s.indirizzo,
+            latitudine: s.lat,
+            longitudine: s.lon,
+            prezzo: info.prezzo,
+            self: priceKind === "self",
+            data: info.data,
+            distanza,
+          });
+        }
+      }
 
       const hasSelf = valid.some((s) => s.self === true);
       const hasServito = valid.some((s) => s.self === false);
@@ -344,11 +461,10 @@ export default function DistributoreApp() {
       setStations(filtered);
       setStatus("ok");
       setLastUpdated(new Date());
-    } catch (err) {
-      if (err.name === "AbortError") return;
+    } catch {
       setStatus("error");
     }
-  }, [coords, radius, fuel, priceType]);
+  }, [coords, manifest, radius, fuel, priceType, loadCell]);
 
   useEffect(() => {
     fetchStations();
@@ -561,9 +677,8 @@ export default function DistributoreApp() {
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Il servizio dati non risponde</div>
               <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5 }}>
-                L'API pubblica che alimenta questa app (basata sugli open data MIMIT) potrebbe essere
-                temporaneamente offline o bloccare le richieste dal browser. Riprova tra poco, oppure
-                consulta{" "}
+                I dati ufficiali MIMIT usati da questa app potrebbero essere temporaneamente
+                irraggiungibili. Riprova tra poco, oppure consulta{" "}
                 <a href="https://carburanti.mise.gov.it" target="_blank" rel="noreferrer" style={{ color: "#D2A24C" }}>
                   l'Osservaprezzi ufficiale
                 </a>
@@ -624,7 +739,8 @@ export default function DistributoreApp() {
 
       <div style={styles.footer}>
         {lastUpdated && <span>Aggiornato alle {lastUpdated.toLocaleTimeString("it-IT")} · </span>}
-        Dati: comunicazioni impianti al MIMIT (art. 51 L.99/2009), via API pubblica di terze parti.
+        Dati: comunicazioni impianti al MIMIT (art. 51 L.99/2009), estrazione ufficiale giornaliera
+        {manifest?.extraction ? ` (${manifest.extraction.replace("Estrazione del ", "")})` : ""}.
       </div>
     </div>
   );

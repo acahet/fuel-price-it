@@ -3,6 +3,10 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  schedule:
+    # Refreshes MIMIT price data daily even with no code changes. 08:00 UTC covers MIMIT's
+    # 8am (CET/CEST) daily extract with margin either side of DST.
+    - cron: "0 8 * * *"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +27,7 @@ jobs:
         with:
           node-version: 24
       - run: npm install
+      - run: npm run fetch-data
       - run: npm run build
       - uses: actions/upload-pages-artifact@v5
         with:
