@@ -10,6 +10,7 @@
     "fetch-data": "node scripts/fetch-mimit-data.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",

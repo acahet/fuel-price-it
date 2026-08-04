@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-le
 import "leaflet/dist/leaflet.css";
 import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown, Clock, Award, ArrowRight } from "lucide-react";
 import { cellsForQuery } from "./geoGrid.js";
+import { supabase } from "./supabaseClient.js";
 
 const FUELS = [
   { id: "benzina", label: "Benzina", short: "B" },
@@ -18,8 +19,9 @@ const PRICE_TYPES = [
 
 const RADII = [3, 5, 10, 20, 30];
 
-// Static snapshot built by scripts/fetch-mimit-data.js (see .github/workflows/fetch-prices.yml
-// for the daily refresh) directly from MIMIT's official open data, replacing the third-party
+// Static snapshot built by scripts/fetch-mimit-data.js (see .github/workflows/deploy.yml,
+// which runs it as a build step on a daily schedule) directly from MIMIT's official open data,
+// replacing the third-party
 // prezzi-carburante.onrender.com API — that API was found to lag MIMIT by ~2 days on average
 // and to be missing at least one live station outright. Sharded into a lat/lon grid (geoGrid.js)
 // so a query only ever downloads the handful of cells near the user, not all ~21k stations
@@ -33,10 +35,13 @@ const cellUrl = (key) => `${DATA_DIR}/${key}.json`;
 // never serves stale cells and old days get swept automatically (see loadManifest below).
 const CACHE_PREFIX = "stazioni-";
 
-// Kill switch for the interactive map, independent of code changes: set
-// VITE_ENABLE_MAP=false in .env.local (or as a build-time env var in CI) to turn it off
-// without touching/reverting this file. Defaults on.
-const MAP_ENABLED = import.meta.env.VITE_ENABLE_MAP !== "false";
+// Kill switch for the interactive map. Supabase's `feature_flags` table (supabase/schema.sql)
+// is authoritative whenever it's configured — flip it from the Supabase dashboard and it's off
+// for everyone, no release/redeploy required, no local override can bring it back. Only a
+// request that actually fails (network error, or Supabase not configured at all — e.g. a fresh
+// clone with no credentials yet) falls back to VITE_ENABLE_MAP / the default-on, and only
+// because there's nothing else to go on at that point — not because local ever outranks it.
+const MAP_ENABLED_OVERRIDE = import.meta.env.VITE_ENABLE_MAP;
 
 const FAVORITE_FUEL_KEY = "distributore.favoriteFuel";
 
@@ -292,8 +297,29 @@ export default function DistributoreApp() {
   const [navMenuIndex, setNavMenuIndex] = useState(null);
   const [highlightedIndex, setHighlightedIndex] = useState(null);
   const [manifest, setManifest] = useState(null); // { generatedAt, extraction, stationCount, cellCount }
+  const [mapEnabled, setMapEnabled] = useState(MAP_ENABLED_OVERRIDE !== "false");
   const cellCacheRef = useRef(new Map()); // cellKey -> station[], populated for this page load
   const rowRefs = useRef({});
+
+  useEffect(() => {
+    if (!supabase) return; // not configured at all — nothing to defer to, keep the local default
+    let cancelled = false;
+    supabase
+      .from("feature_flags")
+      .select("enabled")
+      .eq("key", "map")
+      .maybeSingle()
+      .then(({ data, error }) => {
+        // A real answer from Supabase always wins, local override or not — that's the point
+        // of it being the kill switch. Only an actual failure (network error, no row) falls
+        // through to whatever the local default already is.
+        if (cancelled || error || !data) return;
+        setMapEnabled(data.enabled);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMarkerClick = (i) => {
     rowRefs.current[i]?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -665,7 +691,7 @@ export default function DistributoreApp() {
         </div>
       </div>
 
-      {MAP_ENABLED && status === "ok" && stations.length > 0 && (
+      {mapEnabled && status === "ok" && stations.length > 0 && (
         <StationMap coords={coords} stations={stations} cheapest={cheapest} onMarkerClick={handleMarkerClick} />
       )}
 

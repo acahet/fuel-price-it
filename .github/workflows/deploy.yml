@@ -29,6 +29,12 @@ jobs:
       - run: npm install
       - run: npm run fetch-data
       - run: npm run build
+        env:
+          # Repository variables (Settings -> Secrets and variables -> Actions -> Variables),
+          # not secrets — the anon key is meant to be public, access is controlled by RLS
+          # (supabase/schema.sql). Baked in at build time like every other VITE_* var.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: ./dist
