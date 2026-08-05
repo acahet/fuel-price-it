@@ -327,24 +327,64 @@ export default function DistributoreApp() {
     setTimeout(() => setHighlightedIndex((cur) => (cur === i ? null : cur)), 2000);
   };
 
+  // Smart geolocation: IP-based lookup (ipwho.is — fast, ~city-level accuracy) races the
+  // browser's real GPS fix. IP almost always answers first and shows *something* immediately
+  // (labeled honestly as approximate — this is a real location signal, never a disguised
+  // default, per the earlier removed-Manduria-fallback decision), then GPS silently upgrades
+  // to a precise fix the moment it resolves and is never overwritten by IP again. Only shows
+  // the "no location" error if BOTH sources fail — a GPS denial no longer nukes results that
+  // IP already provided, and an IP failure no longer blocks GPS from working normally.
   const locate = useCallback(() => {
     setLocStatus("locating");
+    let gpsWon = false; // true once a real GPS fix has been applied — IP must never overwrite it after this
+    let anyFix = false;
+    let ipSettled = false;
+    let gpsSettled = false;
+
+    const maybeDenied = () => {
+      if (!anyFix && ipSettled && gpsSettled) {
+        setLocStatus("denied");
+        setStatus("geolocation_denied");
+      }
+    };
+
+    fetch("https://ipwho.is/")
+      .then((res) => res.json())
+      .then((data) => {
+        ipSettled = true;
+        if (gpsWon || !data.success) {
+          maybeDenied();
+          return;
+        }
+        anyFix = true;
+        setCoords({ lat: data.latitude, lon: data.longitude });
+        setLocLabel(`Posizione approssimativa${data.city ? ` (${data.city})` : ""}`);
+        setLocStatus("ok");
+      })
+      .catch(() => {
+        ipSettled = true;
+        maybeDenied();
+      });
+
     if (!navigator.geolocation) {
       console.error("Geolocation unavailable: navigator.geolocation is not supported by this browser.");
-      setLocStatus("denied");
-      setStatus("geolocation_denied");
+      gpsSettled = true;
+      maybeDenied();
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        gpsSettled = true;
+        gpsWon = true;
+        anyFix = true;
         setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
         setLocLabel("Posizione attuale");
         setLocStatus("ok");
       },
       (error) => {
+        gpsSettled = true;
         console.error("Geolocation failed:", error);
-        setLocStatus("denied");
-        setStatus("geolocation_denied");
+        maybeDenied();
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
