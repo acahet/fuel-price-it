@@ -4,6 +4,16 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-05
+
+### Added
+- Interactive map view (Leaflet/OpenStreetMap): user-location marker, gold marker for the cheapest station, teal for standard, click-to-scroll-and-highlight the matching list card.
+- Runtime map toggle via a Supabase-backed feature flag — the map can be switched on/off live from a dashboard without a redeploy. Falls back to a build-time env flag when Supabase isn't configured.
+- Smart geolocation: shows a fast approximate location (IP-based) while the browser resolves a precise GPS fix, and silently upgrades to GPS the moment it's ready. If GPS is denied but IP succeeds, results still show instead of a dead-end error screen.
+
+### Changed
+- Station data is now fetched directly from MIMIT's official daily CSVs instead of a third-party API, closing a ~2-day staleness gap down to ~1 day. Data is geo-sharded and cached client-side (Cache API) so repeat visits and nearby queries pull only small, targeted slices instead of the whole country.
+
 ## [1.1.0] - 2026-08-02
 
 ### Added
@@ -26,5 +36,6 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - List of nearby stations with the cheapest highlighted.
 - Crash fix for stations with a missing/invalid price.
 
-[Unreleased]: https://github.com/acahet/fuel-price-it/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/acahet/fuel-price-it/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/acahet/fuel-price-it/releases/tag/v1.2.0
 [1.1.0]: https://github.com/acahet/fuel-price-it/releases/tag/v1.1.0

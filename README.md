@@ -6,11 +6,12 @@ Live demo: deployed via GitHub Pages on every push to `main`.
 
 ## Features
 
-- Geolocation-based search; no default-location fallback if it's denied
+- Smart geolocation: fast approximate (IP-based) results while precise GPS resolves, with graceful fallback if GPS is denied
 - Fuel type selector: Benzina, Gasolio, GPL, Metano
 - Self vs Servito toggle, with automatic fallback to whichever is actually available
 - Adjustable search radius (3–30 km)
 - List of nearby stations sorted by distance, with the cheapest price in the zone highlighted
+- Interactive map view, toggleable at runtime via a Supabase feature flag
 - Price freshness indicator, flagging prices unverified after 5 days
 - Navigate button per station (Google Maps / Waze / Apple Maps)
 - Handles missing/invalid price data and API/geolocation errors gracefully
@@ -19,7 +20,9 @@ Live demo: deployed via GitHub Pages on every push to `main`.
 
 - [React 18](https://react.dev/) + [Vite 5](https://vitejs.dev/)
 - [lucide-react](https://lucide.dev/) for icons
-- Data source: [prezzi-carburante API](https://prezzi-carburante.onrender.com/api/distributori), built on MIMIT open data (fuel price communications under Art. 51 L.99/2009)
+- [react-leaflet](https://react-leaflet.js.org/) for the map view
+- [Supabase](https://supabase.com/) for the runtime feature flag
+- Data source: [MIMIT open data](https://www.mimit.gov.it/) (official daily fuel price CSVs, under Art. 51 L.99/2009), fetched and geo-sharded at build time
 
 ## Getting started
 
@@ -69,13 +72,17 @@ Pushing to `main` triggers [`.github/workflows/deploy.yml`](.github/workflows/de
 ## Roadmap
 
 ### Next
-- [ ] Interactive map view (Leaflet/MapLibre) — color-coded markers, click-to-scroll to list card
-- [ ] Favorite fuel type: ask once on first visit, remember it as the default (`feature/favorite-fuel-type`)
+- [ ] City/CAP search bar — geocode a typed city/postal code to re-center the search anywhere in Italy
+- [ ] Favorite stations — star stations, persist to localStorage
+- [ ] Fueling cost calculator — tank-size slider showing total cost and savings vs. the local average
 
 ### Backlog
+- [ ] Regional average price comparison (per-provincia/per-fuel, computed from the MIMIT data pipeline)
+- [ ] Crowdsourced "live" prices with photo verification
 - [ ] Trivy — dependency vulnerability scanning in CI
 - [ ] SonarQube — static analysis / code quality gate in CI
 - [ ] E2E tests
+- [ ] GitHub Project board
 
 ### Dropped
 - Specialty fuel sub-types (Benzina Speciale / Gasolio Hi-Q) — the prezzi-carburante API doesn't expose these fuel variants, only benzina/gasolio/gpl/metano

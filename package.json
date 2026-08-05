@@ -1,17 +1,21 @@
 {
   "name": "distributore",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fetch-data": "node scripts/fetch-mimit-data.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
