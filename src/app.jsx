@@ -63,26 +63,6 @@ function saveFavoriteFuel(id) {
   }
 }
 
-const FAVORITE_FUEL_KEY = "distributore.favoriteFuel";
-
-function readFavoriteFuel() {
-  try {
-    const saved = localStorage.getItem(FAVORITE_FUEL_KEY);
-    return FUELS.some((f) => f.id === saved) ? saved : null;
-  } catch {
-    // localStorage can throw in private-browsing modes on some browsers — just skip persistence.
-    return null;
-  }
-}
-
-function saveFavoriteFuel(id) {
-  try {
-    localStorage.setItem(FAVORITE_FUEL_KEY, id);
-  } catch {
-    // ignore — see readFavoriteFuel
-  }
-}
-
 // Universal links (not maps:// / geo: custom schemes) so each also works as a plain
 // web fallback when the corresponding app isn't installed, e.g. on desktop.
 function mapLinks(lat, lon) {
