@@ -1,13 +1,16 @@
 {
   "name": "distributore",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "fetch-data": "node scripts/fetch-mimit-data.js"
+    "fetch-data": "node scripts/fetch-mimit-data.js",
+    "lint:sonar": "eslint --config eslint.sonar.config.mjs src scripts",
+    "quality:duplication": "jscpd --config .jscpd.json",
+    "test": "node --test src/stationSelection.test.js src/locationRace.test.js src/geoGrid.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.0",
@@ -18,7 +21,13 @@
     "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "globals": "^17.13.0",
+    "jscpd": "^5.4.1",
     "vite": "^6.4.4"
   }
 }

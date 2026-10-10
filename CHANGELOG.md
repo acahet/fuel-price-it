@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-10
+
+### Added
+- Responsive desktop layout: the map and station list sit side by side on wide screens, with the map sticky while scrolling the list.
+
+### Changed
+- Code quality: Sonar lint (`npm run lint:sonar`) and duplication (`npm run quality:duplication`) checks are in place and clean. Station selection, price-type fallback, staleness and pump label logic moved into `src/stationSelection.js`; the IP/GPS location race into `src/locationRace.js`. The main app component is split into smaller pieces. UI markup is unchanged.
+
+### Tests
+- 31 unit tests across station selection, location race and geo-grid (`npm test`).
+
 ## [1.2.1] - 2026-10-10
 
 ### Security

@@ -57,7 +57,8 @@ function formatIndirizzo(indirizzo, comune, provincia) {
   const città = (comune || "").trim();
   const prov = (provincia || "").trim();
   if (!città) return addr;
-  return `${addr}, ${città}${prov ? ` (${prov})` : ""}`;
+  const provSuffix = prov ? ` (${prov})` : "";
+  return `${addr}, ${città}${provSuffix}`;
 }
 
 function buildStations(anagraficaRows, priceByStation) {
