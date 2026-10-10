@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown, Clock, Award, ArrowRight } from "lucide-react";
+import { MapPin, Fuel, RefreshCw, Navigation, AlertCircle, ChevronDown, Clock, Award, ArrowRight, List, Map as MapIcon, Sun, Moon } from "lucide-react";
 import { cellsForQuery } from "./geoGrid.js";
 import { supabase } from "./supabaseClient.js";
 
@@ -44,6 +44,17 @@ const CACHE_PREFIX = "stazioni-";
 const MAP_ENABLED_OVERRIDE = import.meta.env.VITE_ENABLE_MAP;
 
 const FAVORITE_FUEL_KEY = "distributore.favoriteFuel";
+const THEME_KEY = "distributore.theme";
+
+function readTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
 
 function readFavoriteFuel() {
   try {
@@ -130,10 +141,10 @@ function FitBounds({ coords, stations }) {
   return null;
 }
 
-function StationMap({ coords, stations, cheapest, onMarkerClick }) {
+function StationMap({ coords, stations, cheapest, onMarkerClick, className = "" }) {
   if (!coords) return null;
   return (
-    <div className="map-wrap" style={styles.mapWrap}>
+    <div className={`map-wrap ${className}`} style={styles.mapWrap}>
       <MapContainer
         center={[coords.lat, coords.lon]}
         zoom={13}
@@ -148,7 +159,7 @@ function StationMap({ coords, stations, cheapest, onMarkerClick }) {
         <CircleMarker
           center={[coords.lat, coords.lon]}
           radius={7}
-          pathOptions={{ color: "#0F1B2B", weight: 2, fillColor: "#EDE6D6", fillOpacity: 1 }}
+          pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#17212B", fillOpacity: 1 }}
         >
           <Tooltip direction="top" offset={[0, -8]}>
             La tua posizione
@@ -162,15 +173,20 @@ function StationMap({ coords, stations, cheapest, onMarkerClick }) {
               center={[s.latitudine, s.longitudine]}
               radius={isCheapest ? 10 : 8}
               pathOptions={{
-                color: "#0A1420",
+                color: "#FFFFFF",
                 weight: 2,
-                fillColor: isCheapest ? "#D2A24C" : "#1B6E71",
+                fillColor: isCheapest ? "#A8D94A" : "#16A89B",
                 fillOpacity: 0.9,
               }}
               eventHandlers={{ click: () => onMarkerClick(i) }}
             >
-              <Tooltip direction="top" offset={[0, -8]}>
-                {s.gestore || "Distributore"} · {s.prezzo.toFixed(3).replace(".", ",")} €/L
+              <Tooltip
+                permanent
+                direction="top"
+                offset={[0, -8]}
+                className={`price-marker ${isCheapest ? "price-marker--best" : ""}`}
+              >
+                € {s.prezzo.toFixed(3).replace(".", ",")}
               </Tooltip>
             </CircleMarker>
           );
@@ -210,6 +226,37 @@ function NavigateButton({ station, open, onToggle, onClose, style }) {
   );
 }
 
+const OPERATOR_BADGES = [
+  { matches: [" q8 ", "kuwait"], label: "Q8", background: "#FFFFFF", color: "#2446A8", border: "#E5E8ED" },
+  { matches: [" eni ", "agip"], label: "Eni", background: "#FFD63D", color: "#171717", border: "#E8BD18" },
+  { matches: ["tamoil"], label: "T", background: "#0674B9", color: "#FFFFFF", border: "#0674B9" },
+  { matches: [" esso "], label: "Esso", background: "#FFFFFF", color: "#D71920", border: "#D9E0E5" },
+  { matches: ["total", "totalerg"], label: "TE", background: "#E1242D", color: "#FFFFFF", border: "#E1242D" },
+  { matches: [" shell "], label: "S", background: "#FFD500", color: "#D71920", border: "#E8BE00" },
+  { matches: [" repsol "], label: "R", background: "#F58220", color: "#FFFFFF", border: "#F58220" },
+  { matches: [" api ", "anonima petroli"], label: "api", background: "#124DA0", color: "#FF8A25", border: "#124DA0" },
+  { matches: [" ip ", "italiana petroli", "ip-gruppo"], label: "IP", background: "#075AB5", color: "#FF8626", border: "#075AB5" },
+];
+
+function StationBrand({ name }) {
+  const normalized = ` ${String(name || "").toLowerCase()} `;
+  const badge = OPERATOR_BADGES.find((item) => item.matches.some((match) => normalized.includes(match)));
+
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        ...styles.stationBrand,
+        ...(badge
+          ? { background: badge.background, color: badge.color, borderColor: badge.border }
+          : {}),
+      }}
+    >
+      {badge ? badge.label : <Fuel size={18} />}
+    </span>
+  );
+}
+
 function StationCard({ station, rank, isCheapest, stale, freshnessText, highlighted, navOpen, onToggleNav, onCloseNav, cardRef }) {
   return (
     <div
@@ -237,10 +284,15 @@ function StationCard({ station, rank, isCheapest, stale, freshnessText, highligh
         </span>
       </div>
 
-      <h3 style={styles.cardTitle}>{station.gestore || "Distributore"}</h3>
-      <p style={styles.cardAddress}>
-        <MapPin size={12} /> {station.indirizzo}
-      </p>
+      <div style={styles.stationIdentity}>
+        <StationBrand name={station.gestore} />
+        <div style={styles.stationIdentityText}>
+          <h3 style={styles.cardTitle}>{station.gestore || "Distributore"}</h3>
+          <p style={styles.cardAddress}>
+            <MapPin size={12} /> {station.indirizzo}
+          </p>
+        </div>
+      </div>
 
       <div style={styles.cardFooter}>
         <div style={styles.priceContainer}>
@@ -279,6 +331,7 @@ function useOdometer(value) {
 }
 
 export default function DistributoreApp() {
+  const [theme, setTheme] = useState(readTheme);
   const [favoriteFuel] = useState(readFavoriteFuel);
   const [fuel, setFuel] = useState(favoriteFuel || "benzina");
   const [showFuelPrompt, setShowFuelPrompt] = useState(!favoriteFuel);
@@ -297,10 +350,20 @@ export default function DistributoreApp() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [navMenuIndex, setNavMenuIndex] = useState(null);
   const [highlightedIndex, setHighlightedIndex] = useState(null);
+  const [mobileView, setMobileView] = useState("list");
   const [manifest, setManifest] = useState(null); // { generatedAt, extraction, stationCount, cellCount }
   const [mapEnabled, setMapEnabled] = useState(MAP_ENABLED_OVERRIDE !== "false");
   const cellCacheRef = useRef(new Map()); // cellKey -> station[], populated for this page load
   const rowRefs = useRef({});
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Theme persistence is optional in restricted browsing modes.
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!supabase) return; // not configured at all — nothing to defer to, keep the local default
@@ -552,62 +615,138 @@ export default function DistributoreApp() {
     null
   );
   const odoPrice = useOdometer(cheapest ? cheapest.prezzo : null);
+  const hasMapResults = mapEnabled && status === "ok" && stations.length > 0;
+  const latestPriceUpdate = stations.reduce((latest, station) => {
+    const reportedAt = parseStationDate(station.data);
+    return reportedAt && (!latest || reportedAt > latest) ? reportedAt : latest;
+  }, null);
 
   return (
-    <div className="app-shell" style={styles.page}>
+    <div className="app-shell" data-theme={theme} style={styles.page}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
-        html { background: #08111d; }
-        body { margin: 0; background: #08111d; }
+        :root, .app-shell[data-theme="light"] {
+          color-scheme: light;
+          --bg: #f6f7f4;
+          --surface: #ffffff;
+          --surface-alt: #eef2f1;
+          --surface-hover: #eef6f4;
+          --text: #17212b;
+          --muted: #64717e;
+          --subtle: #89949d;
+          --border: #dde3e8;
+          --border-strong: #b8c4cc;
+          --primary: #16a89b;
+          --primary-soft: #ddf6f2;
+          --primary-text: #0e8e83;
+          --best: #a8d94a;
+          --best-text: #6f9b25;
+          --best-border: #c9e49b;
+          --warning: #d97706;
+          --warning-bg: #fff9ed;
+          --warning-border: #f2d9a9;
+          --shadow: rgba(23,33,43,.08);
+          --overlay: rgba(23,33,43,.48);
+        }
+        html[data-theme="dark"], .app-shell[data-theme="dark"] {
+          color-scheme: dark;
+          --bg: #0b1118;
+          --surface: #121c27;
+          --surface-alt: #192631;
+          --surface-hover: #1b3034;
+          --text: #f3f6f7;
+          --muted: #9aabb7;
+          --subtle: #748693;
+          --border: #283946;
+          --border-strong: #405563;
+          --primary: #29c7b8;
+          --primary-soft: #163b3a;
+          --primary-text: #70ddd3;
+          --best: #b8e85a;
+          --best-text: #b8e85a;
+          --best-border: #526a2f;
+          --warning: #f0a35a;
+          --warning-bg: #2b2118;
+          --warning-border: #60452c;
+          --shadow: rgba(0,0,0,.28);
+          --overlay: rgba(0,0,0,.68);
+        }
+        html, body { background: var(--bg); }
+        body { margin: 0; transition: background .2s ease; }
         button, select { font: inherit; }
         button:focus-visible, select:focus-visible, a:focus-visible {
-          outline: 2px solid #f0bd5f;
+          outline: 3px solid rgba(22, 168, 155, .28);
           outline-offset: 3px;
         }
-        ::selection { background: #D2A24C55; }
+        ::selection { background: rgba(22, 168, 155, .2); }
         .app-shell { max-width: none !important; overflow: hidden; }
         .app-main { width: min(1180px, 100%); margin: 0 auto; }
         .station-card { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
-        .station-card:hover { border-color: #3b526f !important; transform: translateY(-1px); box-shadow: 0 12px 30px rgba(0,0,0,.16); }
+        .station-card:hover { border-color: var(--border-strong) !important; transform: translateY(-1px); box-shadow: 0 12px 28px var(--shadow); }
         .chip { transition: all .15s ease; min-height: 42px; }
         .chip:active { transform: scale(0.96); }
-        .nav-menu-item:hover { background: #1C2E45; }
+        .nav-menu-item:hover { background: var(--surface-hover); }
+        .price-summary-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
         .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 4px 0 14px; }
-        .section-eyebrow { margin: 0 0 4px; color: #d2a24c; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
-        .section-title { margin: 0; color: #ede6d6; font-size: 20px; line-height: 1.2; }
-        .result-count { color: #8a98aa; font-size: 12px; white-space: nowrap; }
+        .section-eyebrow { margin: 0 0 4px; color: var(--primary-text); font-size: 10px; font-weight: 700; letter-spacing: 1.35px; text-transform: uppercase; }
+        .section-title { margin: 0; color: var(--text); font-size: 20px; line-height: 1.2; letter-spacing: -.3px; }
+        .result-count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+        .mobile-view-switch { display: none; }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes rowFlash { 0%, 100% { background: transparent; } 30% { background: #D2A24C22; } }
-        .leaflet-container { background: #16263B; font-family: 'Inter', sans-serif; }
-        .leaflet-control-zoom a { background: #16263B !important; color: #EDE6D6 !important; border-color: #2A3F5A !important; }
-        .leaflet-control-zoom a:hover { background: #1C2E45 !important; }
-        .leaflet-control-attribution { background: #0A1420CC !important; color: #5B7091 !important; }
-        .leaflet-control-attribution a { color: #8A98AA !important; }
-        .leaflet-tooltip { background: #16263B !important; color: #EDE6D6 !important; border: 1px solid #2A3F5A !important; box-shadow: none !important; }
-        .leaflet-tooltip-top:before { border-top-color: #2A3F5A !important; }
+        @keyframes rowFlash { 0%, 100% { background: transparent; } 30% { background: rgba(168,217,74,.2); } }
+        .leaflet-container { background: var(--surface-alt); font-family: 'Inter', sans-serif; }
+        .leaflet-tile-pane { filter: saturate(.72) brightness(1.04); }
+        html[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.68) saturate(.55) contrast(.92); }
+        .leaflet-control-zoom { border: 1px solid var(--border) !important; box-shadow: 0 8px 18px var(--shadow) !important; }
+        .leaflet-control-zoom a { background: var(--surface) !important; color: var(--text) !important; border-color: var(--border) !important; }
+        .leaflet-control-zoom a:hover { background: var(--surface-alt) !important; }
+        .leaflet-control-attribution { background: var(--surface) !important; color: var(--muted) !important; opacity: .88; }
+        .leaflet-control-attribution a { color: var(--primary-text) !important; }
+        .leaflet-tooltip { background: var(--surface) !important; color: var(--text) !important; border: 1px solid var(--border) !important; box-shadow: 0 8px 18px var(--shadow) !important; }
+        .leaflet-tooltip-top:before { border-top-color: var(--border) !important; }
+        .leaflet-tooltip.price-marker { padding: 5px 8px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; }
+        .leaflet-tooltip.price-marker--best { background: var(--best) !important; color: #17212b !important; border-color: var(--best) !important; transform-origin: bottom center; }
+        .leaflet-tooltip.price-marker--best.leaflet-tooltip-top:before { border-top-color: var(--best) !important; }
+        .footer-item { display: inline-flex; align-items: center; gap: 4px; }
+        .footer-item strong { color: var(--muted); font-weight: 600; }
         @media (min-width: 760px) {
-          .app-hero { padding: 26px max(32px, calc((100vw - 1180px) / 2)) 32px !important; }
-          .app-hero .hero-top { margin-bottom: 28px !important; }
-          .app-hero .pump-panel { max-width: 660px; margin: 0 auto; padding: 24px 28px !important; }
-          .app-controls { margin: 22px 20px 18px; padding: 18px !important; background: #101f31; border: 1px solid #203550; border-radius: 18px; display: grid; grid-template-columns: 1.35fr .8fr 1.1fr; gap: 16px; align-items: center; box-shadow: 0 16px 42px rgba(0,0,0,.14); }
+          .mobile-view-hidden { display: block !important; }
+          .app-hero { padding: 16px max(32px, calc((100vw - 1180px) / 2)) !important; }
+          .app-hero .hero-top { margin-bottom: 0 !important; }
+          .app-controls { margin: 22px 20px 18px; padding: 14px !important; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: grid; grid-template-columns: 1.35fr .8fr 1.1fr; gap: 16px; align-items: center; box-shadow: 0 10px 32px var(--shadow); }
           .app-controls .fuel-row, .app-controls .toggle-row { margin: 0 !important; }
           .results-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(360px, .88fr); gap: 20px; padding: 0 20px; align-items: start; }
           .results-grid--single { grid-template-columns: minmax(0, 760px); justify-content: center; }
-          .map-wrap { height: min(66vh, 690px) !important; min-height: 520px; margin: 0 !important; position: sticky; top: 20px; border-radius: 18px !important; }
-          .results-list { padding: 0 !important; max-height: min(66vh, 690px); overflow-y: auto; padding-right: 5px !important; scrollbar-width: thin; scrollbar-color: #2a3f5a transparent; }
+          .map-wrap { height: min(72vh, 740px) !important; min-height: 560px; margin: 0 !important; position: sticky; top: 20px; border-radius: 18px !important; box-shadow: 0 12px 32px var(--shadow); }
+          .pump-panel { margin-bottom: 20px; }
+          .results-list { padding: 0 !important; max-height: min(52vh, 540px); overflow-y: auto; padding-right: 5px !important; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
           .results-pane { min-width: 0; }
           .station-card { padding: 16px !important; }
           .app-footer { padding-bottom: 8px !important; }
         }
         @media (min-width: 1100px) {
           .app-controls { margin-left: 20px; margin-right: 20px; }
-          .pump-digits { font-size: 56px !important; }
+          .pump-digits { font-size: 38px !important; }
         }
         @media (max-width: 759px) {
+          .app-hero .hero-top { margin-bottom: 0 !important; }
+          .app-controls { padding-bottom: 14px !important; }
+          .results-grid { display: flex; flex-direction: column; }
+          .results-pane { display: contents; }
+          .pump-panel { order: 1; margin: 0 20px 12px; }
+          .mobile-view-switch { order: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 0 20px 8px; padding: 4px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 12px; }
+          .mobile-view-switch button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: var(--muted); background: transparent; border: 0; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; }
+          .mobile-view-switch button.active { color: #fff; background: var(--primary); box-shadow: 0 5px 12px rgba(22,168,155,.2); }
+          .map-wrap { order: 3; height: 430px !important; }
+          .results-pane .section-heading { order: 4; padding: 12px 20px 8px; width: 100%; }
+          .results-list { order: 5; width: 100%; }
+          .mobile-view-hidden { display: none !important; }
+          .mobile-view-active { display: block; }
           .results-pane .section-heading { padding: 12px 20px 8px; }
           .section-title { font-size: 18px; }
+          .price-summary-row { align-items: center; }
         }
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -617,7 +756,7 @@ export default function DistributoreApp() {
       {showFuelPrompt && (
         <div style={styles.fuelPromptOverlay}>
           <div style={styles.fuelPromptCard} role="dialog" aria-modal="true" aria-labelledby="fuel-prompt-title">
-            <Fuel size={22} color="#D2A24C" />
+            <Fuel size={22} color="var(--primary)" />
             <div id="fuel-prompt-title" style={styles.fuelPromptTitle}>Quale carburante usi di solito?</div>
             <div style={styles.fuelPromptHint}>
               Lo useremo come predefinito ogni volta che apri l'app. Puoi cambiarlo quando vuoi.
@@ -645,55 +784,26 @@ export default function DistributoreApp() {
         </div>
       )}
 
-      {/* HERO — pump display */}
+      {/* HEADER */}
       <div className="app-hero" style={styles.hero}>
         <div className="hero-top" style={styles.heroTop}>
           <div style={styles.brand}>
-            <Fuel size={18} color="#D2A24C" />
-            <span style={styles.brandText}>DISTRIBUTORE</span>
+            <span style={styles.brandMark}><Fuel size={19} /></span>
+            <span style={styles.brandText}>Distributore</span>
           </div>
-          <button onClick={locate} style={styles.locBtn} title="Aggiorna posizione" aria-label="Aggiorna posizione">
-            <Navigation size={14} />
-          </button>
-        </div>
-
-        <div className="pump-panel" style={styles.pumpPanel}>
-          <div style={styles.pumpLabel}>
-            {status === "loading" && "AGGIORNAMENTO…"}
-            {status === "ok" && cheapest && `PREZZO PIÙ BASSO (${effectivePriceType === "self" ? "SELF" : "SERVITO"}) NELLA ZONA`}
-            {status === "ok" && !cheapest && "NESSUN DISTRIBUTORE TROVATO"}
-            {status === "error" && "SERVIZIO NON RAGGIUNGIBILE"}
-            {status === "geolocation_denied" && "CI DISPIACE, POSIZIONE NON DISPONIBILE"}
-            {status === "idle" && "IN ATTESA DI POSIZIONE…"}
+          <div style={styles.headerActions}>
+            <button
+              onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+              style={styles.themeBtn}
+              title={theme === "light" ? "Attiva tema scuro" : "Attiva tema chiaro"}
+              aria-label={theme === "light" ? "Attiva tema scuro" : "Attiva tema chiaro"}
+            >
+              {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
+            </button>
+            <button onClick={locate} style={styles.locBtn} title="Aggiorna posizione" aria-label="Aggiorna posizione">
+              <Navigation size={14} />
+            </button>
           </div>
-          <div className="pump-digits" style={styles.pumpDigits}>
-            {cheapest && Number.isFinite(odoPrice) ? (
-              <>
-                <span>{odoPrice.toFixed(3).replace(".", ",")}</span>
-                <span style={styles.pumpUnit}>€/L</span>
-              </>
-            ) : (
-              <span style={{ opacity: 0.3, animation: status === "loading" ? "pulse 1.4s infinite" : "none" }}>
-                — , — — —
-              </span>
-            )}
-          </div>
-          {cheapest && (
-            <>
-              <div style={styles.pumpSub}>
-                {cheapest.gestore} · a {parseFloat(cheapest.distanza).toFixed(1)} km
-                {parseStationDate(cheapest.data) && ` · ${formatRelativeTime(parseStationDate(cheapest.data))}`}
-                {isStale(cheapest) && <span style={styles.staleTagHero}>NON VERIFICATO</span>}
-              </div>
-              <NavigateButton
-                station={cheapest}
-                open={navMenuIndex === "hero"}
-                onToggle={() => setNavMenuIndex(navMenuIndex === "hero" ? null : "hero")}
-                onClose={() => setNavMenuIndex(null)}
-                style={styles.btnNavigateHero}
-              />
-            </>
-          )}
         </div>
       </div>
 
@@ -742,7 +852,7 @@ export default function DistributoreApp() {
 
         <div style={styles.metaRow}>
           <div style={styles.locInfo}>
-            <MapPin size={13} color="#8A98AA" />
+            <MapPin size={13} color="var(--muted)" />
             <span style={styles.locText}>
               {locStatus === "locating" && "Localizzazione…"}
               {locStatus === "denied" && "Posizione non disponibile"}
@@ -764,7 +874,7 @@ export default function DistributoreApp() {
                 </option>
               ))}
             </select>
-            <ChevronDown size={13} color="#8A98AA" style={styles.selectIcon} />
+            <ChevronDown size={13} color="var(--muted)" style={styles.selectIcon} />
           </div>
 
           <button onClick={fetchStations} style={styles.refreshBtn} title="Aggiorna prezzi" aria-label="Aggiorna prezzi">
@@ -775,30 +885,100 @@ export default function DistributoreApp() {
         </div>
       </div>
 
-      <div className={`results-grid ${!(mapEnabled && status === "ok" && stations.length > 0) ? "results-grid--single" : ""}`}>
-        {mapEnabled && status === "ok" && stations.length > 0 && (
-          <StationMap coords={coords} stations={stations} cheapest={cheapest} onMarkerClick={handleMarkerClick} />
+      <div className={`results-grid ${!hasMapResults ? "results-grid--single" : ""}`}>
+        {hasMapResults && (
+          <StationMap
+            coords={coords}
+            stations={stations}
+            cheapest={cheapest}
+            onMarkerClick={handleMarkerClick}
+            className={mobileView === "map" ? "mobile-view-active" : "mobile-view-hidden"}
+          />
         )}
 
       {/* LIST */}
       <section className="results-pane" aria-labelledby="results-title">
-        <div className="section-heading">
+        <div className="pump-panel" style={styles.pumpPanel}>
+          <div style={styles.pumpLabel}>
+            {status === "loading" && "Aggiornamento…"}
+            {status === "ok" && cheapest && `Miglior prezzo · ${effectivePriceType === "self" ? "Self" : "Servito"}`}
+            {status === "ok" && !cheapest && "Nessun distributore trovato"}
+            {status === "error" && "Servizio non raggiungibile"}
+            {status === "geolocation_denied" && "Posizione non disponibile"}
+            {status === "idle" && "In attesa della posizione…"}
+          </div>
+          <div className="price-summary-row">
+            <div>
+              <div className="pump-digits" style={styles.pumpDigits}>
+                {cheapest && Number.isFinite(odoPrice) ? (
+                  <>
+                    <span>€ {odoPrice.toFixed(3).replace(".", ",")}</span>
+                    <span style={styles.pumpUnit}>/L</span>
+                  </>
+                ) : (
+                  <span style={{ opacity: 0.3, animation: status === "loading" ? "pulse 1.4s infinite" : "none" }}>
+                    —,———
+                  </span>
+                )}
+              </div>
+              {cheapest && (
+                <div style={styles.pumpSub}>
+                  {cheapest.gestore} · {parseFloat(cheapest.distanza).toFixed(1)} km
+                  {parseStationDate(cheapest.data) && ` · ${formatRelativeTime(parseStationDate(cheapest.data))}`}
+                  {isStale(cheapest) && <span style={styles.staleTagHero}>NON VERIFICATO</span>}
+                </div>
+              )}
+            </div>
+            {cheapest && (
+              <NavigateButton
+                station={cheapest}
+                open={navMenuIndex === "hero"}
+                onToggle={() => setNavMenuIndex(navMenuIndex === "hero" ? null : "hero")}
+                onClose={() => setNavMenuIndex(null)}
+                style={styles.btnNavigateHero}
+              />
+            )}
+          </div>
+        </div>
+
+        {hasMapResults && (
+          <div className="mobile-view-switch" role="group" aria-label="Visualizzazione risultati">
+            <button
+              type="button"
+              className={mobileView === "list" ? "active" : ""}
+              aria-pressed={mobileView === "list"}
+              onClick={() => setMobileView("list")}
+            >
+              <List size={15} /> Lista
+            </button>
+            <button
+              type="button"
+              className={mobileView === "map" ? "active" : ""}
+              aria-pressed={mobileView === "map"}
+              onClick={() => setMobileView("map")}
+            >
+              <MapIcon size={15} /> Mappa
+            </button>
+          </div>
+        )}
+
+        <div className={`section-heading ${!hasMapResults || mobileView === "list" ? "mobile-view-active" : "mobile-view-hidden"}`}>
           <div>
             <p className="section-eyebrow">Nelle vicinanze</p>
             <h2 className="section-title" id="results-title">Distributori più vicini</h2>
           </div>
           {status === "ok" && <span className="result-count">{stations.length} risultati</span>}
         </div>
-      <div className="results-list" style={styles.list} aria-live="polite" aria-busy={status === "loading"}>
+      <div className={`results-list ${!hasMapResults || mobileView === "list" ? "mobile-view-active" : "mobile-view-hidden"}`} style={styles.list} aria-live="polite" aria-busy={status === "loading"}>
         {status === "error" && (
           <div style={styles.errorBox}>
-            <AlertCircle size={16} color="#D2A24C" />
+            <AlertCircle size={16} color="var(--warning)" />
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Il servizio dati non risponde</div>
-              <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
                 I dati ufficiali MIMIT usati da questa app potrebbero essere temporaneamente
                 irraggiungibili. Riprova tra poco, oppure consulta{" "}
-                <a href="https://carburanti.mise.gov.it" target="_blank" rel="noreferrer" style={{ color: "#D2A24C" }}>
+                <a href="https://carburanti.mise.gov.it" target="_blank" rel="noreferrer" style={{ color: "var(--primary-text)" }}>
                   l'Osservaprezzi ufficiale
                 </a>
                 .
@@ -809,10 +989,10 @@ export default function DistributoreApp() {
 
         {locStatus === "denied" && (
           <div style={{ ...styles.errorBox, marginBottom: 10 }}>
-            <AlertCircle size={16} color="#D2A24C" />
+            <AlertCircle size={16} color="var(--warning)" />
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Ci dispiace, ci serve la tua posizione</div>
-              <div style={{ fontSize: 13, color: "#8A98AA", lineHeight: 1.5, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5, marginBottom: 10 }}>
                 Non è stato possibile ottenere la posizione attuale (permesso negato, timeout o sensore non
                 disponibile). Senza la tua posizione non possiamo cercare i distributori vicino a te — per
                 evitare risultati fuorvianti non usiamo una località predefinita.
@@ -861,9 +1041,20 @@ export default function DistributoreApp() {
       </main>
 
       <div className="app-footer" style={styles.footer}>
-        {lastUpdated && <span>Aggiornato alle {lastUpdated.toLocaleTimeString("it-IT")} · </span>}
-        Dati: comunicazioni impianti al MIMIT (art. 51 L.99/2009), estrazione ufficiale giornaliera
-        {manifest?.extraction ? ` (${manifest.extraction.replace("Estrazione del ", "")})` : ""}.
+        {latestPriceUpdate && (
+          <span className="footer-item">
+            <strong>Ultimo prezzo comunicato</strong> {formatRelativeTime(latestPriceUpdate)} · {latestPriceUpdate.toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
+        {lastUpdated && (
+          <span className="footer-item">
+            <strong>Ricerca aggiornata</strong> {lastUpdated.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
+        <span className="footer-item">
+          <strong>Fonte MIMIT</strong> estrazione giornaliera
+          {manifest?.extraction ? ` · ${manifest.extraction.replace("Estrazione del ", "")}` : ""}
+        </span>
       </div>
     </div>
   );
@@ -872,22 +1063,23 @@ export default function DistributoreApp() {
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "radial-gradient(circle at 50% -10%, #1a3149 0, #0f1b2b 34%, #0b1624 100%)",
-    color: "#EDE6D6",
+    background: "var(--bg)",
+    color: "var(--text)",
     fontFamily: "'Inter', sans-serif",
     maxWidth: 480,
     margin: "0 auto",
     paddingBottom: 32,
   },
   hero: {
-    background: "linear-gradient(160deg, rgba(24,43,65,.98) 0%, rgba(12,25,40,.98) 100%)",
-    padding: "20px 20px 26px",
-    borderBottom: "1px solid #1C2E45",
+    background: "var(--surface)",
+    padding: "14px 20px",
+    borderBottom: "1px solid var(--border)",
+    boxShadow: "0 1px 0 var(--shadow)",
   },
   fuelPromptOverlay: {
     position: "fixed",
     inset: 0,
-    background: "#0A1420CC",
+    background: "var(--overlay)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -895,24 +1087,24 @@ const styles = {
     zIndex: 100,
   },
   fuelPromptCard: {
-    background: "#16263B",
-    border: "1px solid #2A3F5A",
-    borderRadius: 16,
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 20,
     padding: "24px 20px",
     maxWidth: 340,
     width: "100%",
     textAlign: "center",
-    boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
+    boxShadow: "0 22px 60px var(--shadow)",
   },
   fuelPromptTitle: {
     fontSize: 16,
     fontWeight: 700,
-    color: "#EDE6D6",
+    color: "var(--text)",
     marginTop: 10,
   },
   fuelPromptHint: {
     fontSize: 12.5,
-    color: "#8A98AA",
+    color: "var(--muted)",
     lineHeight: 1.5,
     marginTop: 6,
     marginBottom: 18,
@@ -923,11 +1115,11 @@ const styles = {
     gap: 8,
   },
   fuelPromptBtn: {
-    background: "#0A1420",
-    border: "1px solid #1C2E45",
-    borderRadius: 10,
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
     padding: "14px 8px",
-    color: "#EDE6D6",
+    color: "var(--text)",
     fontSize: 13.5,
     fontWeight: 600,
     cursor: "pointer",
@@ -935,7 +1127,7 @@ const styles = {
   fuelPromptSkip: {
     background: "none",
     border: "none",
-    color: "#5B7091",
+    color: "var(--muted)",
     fontSize: 12.5,
     marginTop: 14,
     cursor: "pointer",
@@ -945,58 +1137,83 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 22,
+    marginBottom: 0,
   },
   brand: { display: "flex", alignItems: "center", gap: 8 },
+  brandMark: {
+    width: 34,
+    height: 34,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "var(--primary-soft)",
+    color: "var(--primary-text)",
+    borderRadius: 10,
+  },
   brandText: {
-    fontFamily: "'Bebas Neue', sans-serif",
-    fontSize: 20,
-    letterSpacing: "2px",
-    color: "#EDE6D6",
+    fontSize: 19,
+    fontWeight: 700,
+    letterSpacing: "-0.45px",
+    color: "var(--text)",
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  themeBtn: {
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: 9,
+    color: "var(--muted)",
+    cursor: "pointer",
+    display: "flex",
   },
   locBtn: {
-    background: "#1C2E45",
-    border: "1px solid #2A3F5A",
-    borderRadius: 8,
-    padding: 8,
-    color: "#D2A24C",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: 9,
+    color: "var(--primary-text)",
     cursor: "pointer",
     display: "flex",
   },
   pumpPanel: {
-    background: "#0A1420",
-    border: "1px solid #1C2E45",
-    borderRadius: 14,
-    padding: "20px 18px",
-    textAlign: "center",
+    background: "var(--surface)",
+    border: "1px solid var(--best-border)",
+    borderRadius: 18,
+    padding: "18px 20px",
+    textAlign: "left",
+    boxShadow: "0 10px 28px var(--shadow)",
   },
   pumpLabel: {
     fontSize: 11,
-    letterSpacing: "1.5px",
-    color: "#5B7091",
-    fontWeight: 600,
-    marginBottom: 10,
+    letterSpacing: "0.8px",
+    color: "var(--best-text)",
+    fontWeight: 700,
+    marginBottom: 8,
+    textTransform: "uppercase",
   },
   pumpDigits: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 44,
+    fontSize: 36,
     fontWeight: 700,
-    color: "#D2A24C",
+    color: "var(--text)",
     display: "flex",
     alignItems: "baseline",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     gap: 8,
-    textShadow: "0 0 24px #D2A24C33",
   },
-  pumpUnit: { fontSize: 16, color: "#8A98AA", fontWeight: 500 },
-  pumpSub: { fontSize: 12.5, color: "#8A98AA", marginTop: 8 },
+  pumpUnit: { fontSize: 15, color: "var(--muted)", fontWeight: 500 },
+  pumpSub: { fontSize: 12.5, color: "var(--muted)", marginTop: 5 },
   staleTagHero: {
     marginLeft: 6,
     fontSize: 9,
     fontWeight: 700,
     letterSpacing: "0.5px",
-    color: "#E28B6D",
-    border: "1px solid #E28B6D55",
+    color: "var(--warning)",
+    border: "1px solid var(--warning-border)",
     borderRadius: 4,
     padding: "1px 4px",
   },
@@ -1004,12 +1221,12 @@ const styles = {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    marginTop: 14,
-    background: "#1B6E71",
+    marginTop: 0,
+    background: "var(--primary)",
     border: "none",
     borderRadius: 10,
     padding: "10px 18px",
-    color: "#EDE6D6",
+    color: "#FFFFFF",
     fontSize: 13.5,
     fontWeight: 700,
     cursor: "pointer",
@@ -1018,26 +1235,28 @@ const styles = {
   fuelRow: { display: "flex", gap: 8, marginBottom: 12 },
   chip: {
     flex: 1,
-    background: "#16263B",
-    border: "1px solid #1C2E45",
-    borderRadius: 8,
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
     padding: "8px 4px",
-    color: "#8A98AA",
+    color: "var(--muted)",
     fontSize: 12.5,
     fontWeight: 500,
     cursor: "pointer",
   },
   chipActive: {
-    background: "#1B6E71",
-    borderColor: "#1B6E71",
-    color: "#EDE6D6",
+    background: "var(--primary)",
+    borderColor: "var(--primary)",
+    color: "#FFFFFF",
+    boxShadow: "0 5px 12px rgba(22,168,155,.16)",
+    fontWeight: 700,
   },
   toggleRow: {
     display: "flex",
     gap: 4,
-    background: "#0A1420",
-    border: "1px solid #1C2E45",
-    borderRadius: 8,
+    background: "var(--surface-alt)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
     padding: 3,
     marginBottom: 12,
   },
@@ -1047,15 +1266,16 @@ const styles = {
     border: "none",
     borderRadius: 6,
     padding: "6px 4px",
-    color: "#8A98AA",
+    color: "var(--muted)",
     fontSize: 12.5,
     fontWeight: 500,
     cursor: "pointer",
   },
   toggleBtnActive: {
-    background: "#D2A24C",
-    color: "#0F1B2B",
+    background: "var(--primary)",
+    color: "#FFFFFF",
     fontWeight: 700,
+    boxShadow: "0 4px 10px rgba(22,168,155,.17)",
   },
   toggleBtnDisabled: {
     opacity: 0.35,
@@ -1065,17 +1285,17 @@ const styles = {
   locInfo: { display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 },
   locText: {
     fontSize: 12,
-    color: "#8A98AA",
+    color: "var(--muted)",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
   radiusWrap: { position: "relative", display: "flex", alignItems: "center" },
   select: {
-    background: "#16263B",
-    border: "1px solid #1C2E45",
-    borderRadius: 8,
-    color: "#EDE6D6",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    color: "var(--text)",
     fontSize: 12.5,
     padding: "7px 26px 7px 10px",
     appearance: "none",
@@ -1083,11 +1303,11 @@ const styles = {
   },
   selectIcon: { position: "absolute", right: 8, pointerEvents: "none" },
   refreshBtn: {
-    background: "#16263B",
-    border: "1px solid #1C2E45",
-    borderRadius: 8,
-    padding: 8,
-    color: "#D2A24C",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
+    padding: 9,
+    color: "var(--primary-text)",
     cursor: "pointer",
     display: "flex",
   },
@@ -1096,23 +1316,23 @@ const styles = {
     margin: "0 20px 4px",
     borderRadius: 14,
     overflow: "hidden",
-    border: "1px solid #1C2E45",
+    border: "1px solid var(--border)",
   },
   list: { padding: "10px 20px 0" },
   card: {
-    background: "#16263B",
-    border: "1px solid #1C2E45",
-    borderRadius: 14,
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 16,
     padding: 14,
     marginBottom: 10,
   },
   cardCheapest: {
-    borderColor: "#D2A24C88",
-    background: "linear-gradient(160deg, #1C2E45 0%, #16263B 100%)",
+    borderColor: "var(--best-border)",
+    background: "var(--surface)",
   },
   cardHighlighted: {
     animation: "rowFlash 2s ease",
-    boxShadow: "0 0 0 1px #D2A24C88 inset",
+    boxShadow: "0 0 0 2px rgba(22,168,155,.3) inset",
   },
   cardHeader: {
     display: "flex",
@@ -1125,7 +1345,7 @@ const styles = {
     fontSize: 10.5,
     fontWeight: 700,
     letterSpacing: "0.45px",
-    color: "#6F839F",
+    color: "var(--subtle)",
     textTransform: "uppercase",
   },
   cardMeta: {
@@ -1141,29 +1361,54 @@ const styles = {
     fontSize: 10.5,
     fontWeight: 700,
     letterSpacing: "0.3px",
-    color: "#D2A24C",
+    color: "var(--best-text)",
   },
   freshnessBadge: {
     display: "inline-flex",
     alignItems: "center",
     gap: 3,
     fontSize: 10,
-    color: "#5B7091",
+    color: "var(--subtle)",
   },
-  freshnessBadgeStale: { color: "#E28B6D" },
+  freshnessBadgeStale: { color: "var(--warning)" },
+  stationIdentity: {
+    display: "flex",
+    alignItems: "center",
+    gap: 11,
+    marginBottom: 12,
+  },
+  stationBrand: {
+    width: 44,
+    height: 44,
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "var(--primary-soft)",
+    color: "var(--primary-text)",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
+    fontSize: 13,
+    fontWeight: 800,
+    letterSpacing: "-0.35px",
+  },
+  stationIdentityText: {
+    minWidth: 0,
+    flex: 1,
+  },
   cardTitle: {
     margin: 0,
     fontSize: 16,
     fontWeight: 700,
-    color: "#EDE6D6",
+    color: "var(--text)",
   },
   cardAddress: {
     display: "flex",
     alignItems: "center",
     gap: 4,
-    margin: "4px 0 12px",
+    margin: "4px 0 0",
     fontSize: 12,
-    color: "#8A98AA",
+    color: "var(--muted)",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -1179,21 +1424,21 @@ const styles = {
     alignItems: "baseline",
     gap: 2,
     fontFamily: "'JetBrains Mono', monospace",
-    color: "#D2A24C",
+    color: "var(--text)",
   },
   priceCurrency: { fontSize: 14, fontWeight: 600 },
   priceValue: { fontSize: 22, fontWeight: 700 },
-  priceUnit: { fontSize: 12, color: "#8A98AA", marginLeft: 2 },
+  priceUnit: { fontSize: 12, color: "var(--muted)", marginLeft: 2 },
   btnNavigate: {
     flexShrink: 0,
     display: "inline-flex",
     alignItems: "center",
     gap: 5,
-    background: "#1B6E71",
-    border: "none",
-    borderRadius: 8,
+    background: "var(--primary-soft)",
+    border: "1px solid var(--border)",
+    borderRadius: 10,
     padding: "9px 14px",
-    color: "#EDE6D6",
+    color: "var(--primary-text)",
     fontSize: 13,
     fontWeight: 600,
     cursor: "pointer",
@@ -1203,21 +1448,21 @@ const styles = {
     position: "absolute",
     right: 0,
     top: "calc(100% + 6px)",
-    background: "#16263B",
-    border: "1px solid #2A3F5A",
-    borderRadius: 10,
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 12,
     padding: 6,
     display: "flex",
     flexDirection: "column",
     gap: 2,
     zIndex: 20,
     minWidth: 150,
-    boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+    boxShadow: "0 14px 34px var(--shadow)",
   },
   navMenuItem: {
     padding: "8px 10px",
     borderRadius: 6,
-    color: "#EDE6D6",
+    color: "var(--text)",
     fontSize: 13,
     fontWeight: 500,
     textDecoration: "none",
@@ -1226,33 +1471,39 @@ const styles = {
   errorBox: {
     display: "flex",
     gap: 10,
-    background: "#16263B",
-    border: "1px solid #2A3F5A",
-    borderRadius: 10,
+    background: "var(--warning-bg)",
+    border: "1px solid var(--warning-border)",
+    borderRadius: 12,
     padding: 14,
   },
   retryBtn: {
-    background: "#1B6E71",
+    background: "var(--primary)",
     border: "none",
     borderRadius: 8,
     padding: "8px 14px",
-    color: "#EDE6D6",
+    color: "#FFFFFF",
     fontSize: 12.5,
     fontWeight: 600,
     cursor: "pointer",
   },
   emptyBox: {
     textAlign: "center",
-    color: "#8A98AA",
+    color: "var(--muted)",
     fontSize: 13,
     padding: "30px 10px",
   },
   footer: {
     marginTop: 20,
-    padding: "0 20px",
+    padding: "12px 20px 0",
     fontSize: 10.5,
-    color: "#3D4F6B",
+    color: "var(--subtle)",
     lineHeight: 1.5,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    columnGap: 16,
+    rowGap: 5,
     textAlign: "center",
   },
 };
