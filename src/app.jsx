@@ -133,7 +133,7 @@ function FitBounds({ coords, stations }) {
 function StationMap({ coords, stations, cheapest, onMarkerClick }) {
   if (!coords) return null;
   return (
-    <div style={styles.mapWrap}>
+    <div className="map-wrap" style={styles.mapWrap}>
       <MapContainer
         center={[coords.lat, coords.lon]}
         zoom={13}
@@ -210,7 +210,7 @@ function NavigateButton({ station, open, onToggle, onClose, style }) {
   );
 }
 
-function StationCard({ station, isCheapest, stale, freshnessText, highlighted, navOpen, onToggleNav, onCloseNav, cardRef }) {
+function StationCard({ station, rank, isCheapest, stale, freshnessText, highlighted, navOpen, onToggleNav, onCloseNav, cardRef }) {
   return (
     <div
       ref={cardRef}
@@ -222,23 +222,24 @@ function StationCard({ station, isCheapest, stale, freshnessText, highlighted, n
       }}
     >
       <div style={styles.cardHeader}>
-        {isCheapest ? (
-          <span style={styles.badgeCheapest}>
-            <Award size={12} /> Più economico
-          </span>
-        ) : (
-          <span />
-        )}
-        {freshnessText && (
-          <span style={{ ...styles.freshnessBadge, ...(stale ? styles.freshnessBadgeStale : {}) }}>
-            <Clock size={11} /> {stale ? "Non verificato" : freshnessText}
-          </span>
-        )}
+        <span style={styles.cardRank}>#{rank} · {parseFloat(station.distanza).toFixed(1)} km</span>
+        <span style={styles.cardMeta}>
+          {isCheapest && (
+            <span style={styles.badgeCheapest}>
+              <Award size={12} /> Più economico
+            </span>
+          )}
+          {freshnessText && (
+            <span style={{ ...styles.freshnessBadge, ...(stale ? styles.freshnessBadgeStale : {}) }}>
+              <Clock size={11} /> {stale ? "Non verificato" : freshnessText}
+            </span>
+          )}
+        </span>
       </div>
 
       <h3 style={styles.cardTitle}>{station.gestore || "Distributore"}</h3>
       <p style={styles.cardAddress}>
-        <MapPin size={12} /> {parseFloat(station.distanza).toFixed(1)} km · {station.indirizzo}
+        <MapPin size={12} /> {station.indirizzo}
       </p>
 
       <div style={styles.cardFooter}>
@@ -553,17 +554,31 @@ export default function DistributoreApp() {
   const odoPrice = useOdometer(cheapest ? cheapest.prezzo : null);
 
   return (
-    <div style={styles.page}>
+    <div className="app-shell" style={styles.page}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
         * { box-sizing: border-box; }
-        body { margin: 0; }
+        html { background: #08111d; }
+        body { margin: 0; background: #08111d; }
+        button, select { font: inherit; }
+        button:focus-visible, select:focus-visible, a:focus-visible {
+          outline: 2px solid #f0bd5f;
+          outline-offset: 3px;
+        }
         ::selection { background: #D2A24C55; }
-        .station-card:hover { border-color: #2A3F5A; }
-        .chip { transition: all .15s ease; }
+        .app-shell { max-width: none !important; overflow: hidden; }
+        .app-main { width: min(1180px, 100%); margin: 0 auto; }
+        .station-card { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+        .station-card:hover { border-color: #3b526f !important; transform: translateY(-1px); box-shadow: 0 12px 30px rgba(0,0,0,.16); }
+        .chip { transition: all .15s ease; min-height: 42px; }
         .chip:active { transform: scale(0.96); }
         .nav-menu-item:hover { background: #1C2E45; }
+        .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 4px 0 14px; }
+        .section-eyebrow { margin: 0 0 4px; color: #d2a24c; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
+        .section-title { margin: 0; color: #ede6d6; font-size: 20px; line-height: 1.2; }
+        .result-count { color: #8a98aa; font-size: 12px; white-space: nowrap; }
         @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes rowFlash { 0%, 100% { background: transparent; } 30% { background: #D2A24C22; } }
         .leaflet-container { background: #16263B; font-family: 'Inter', sans-serif; }
         .leaflet-control-zoom a { background: #16263B !important; color: #EDE6D6 !important; border-color: #2A3F5A !important; }
@@ -572,13 +587,38 @@ export default function DistributoreApp() {
         .leaflet-control-attribution a { color: #8A98AA !important; }
         .leaflet-tooltip { background: #16263B !important; color: #EDE6D6 !important; border: 1px solid #2A3F5A !important; box-shadow: none !important; }
         .leaflet-tooltip-top:before { border-top-color: #2A3F5A !important; }
+        @media (min-width: 760px) {
+          .app-hero { padding: 26px max(32px, calc((100vw - 1180px) / 2)) 32px !important; }
+          .app-hero .hero-top { margin-bottom: 28px !important; }
+          .app-hero .pump-panel { max-width: 660px; margin: 0 auto; padding: 24px 28px !important; }
+          .app-controls { margin: 22px 20px 18px; padding: 18px !important; background: #101f31; border: 1px solid #203550; border-radius: 18px; display: grid; grid-template-columns: 1.35fr .8fr 1.1fr; gap: 16px; align-items: center; box-shadow: 0 16px 42px rgba(0,0,0,.14); }
+          .app-controls .fuel-row, .app-controls .toggle-row { margin: 0 !important; }
+          .results-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(360px, .88fr); gap: 20px; padding: 0 20px; align-items: start; }
+          .results-grid--single { grid-template-columns: minmax(0, 760px); justify-content: center; }
+          .map-wrap { height: min(66vh, 690px) !important; min-height: 520px; margin: 0 !important; position: sticky; top: 20px; border-radius: 18px !important; }
+          .results-list { padding: 0 !important; max-height: min(66vh, 690px); overflow-y: auto; padding-right: 5px !important; scrollbar-width: thin; scrollbar-color: #2a3f5a transparent; }
+          .results-pane { min-width: 0; }
+          .station-card { padding: 16px !important; }
+          .app-footer { padding-bottom: 8px !important; }
+        }
+        @media (min-width: 1100px) {
+          .app-controls { margin-left: 20px; margin-right: 20px; }
+          .pump-digits { font-size: 56px !important; }
+        }
+        @media (max-width: 759px) {
+          .results-pane .section-heading { padding: 12px 20px 8px; }
+          .section-title { font-size: 18px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+        }
       `}</style>
 
       {showFuelPrompt && (
         <div style={styles.fuelPromptOverlay}>
-          <div style={styles.fuelPromptCard}>
+          <div style={styles.fuelPromptCard} role="dialog" aria-modal="true" aria-labelledby="fuel-prompt-title">
             <Fuel size={22} color="#D2A24C" />
-            <div style={styles.fuelPromptTitle}>Quale carburante usi di solito?</div>
+            <div id="fuel-prompt-title" style={styles.fuelPromptTitle}>Quale carburante usi di solito?</div>
             <div style={styles.fuelPromptHint}>
               Lo useremo come predefinito ogni volta che apri l'app. Puoi cambiarlo quando vuoi.
             </div>
@@ -606,18 +646,18 @@ export default function DistributoreApp() {
       )}
 
       {/* HERO — pump display */}
-      <div style={styles.hero}>
-        <div style={styles.heroTop}>
+      <div className="app-hero" style={styles.hero}>
+        <div className="hero-top" style={styles.heroTop}>
           <div style={styles.brand}>
             <Fuel size={18} color="#D2A24C" />
             <span style={styles.brandText}>DISTRIBUTORE</span>
           </div>
-          <button onClick={locate} style={styles.locBtn} title="Aggiorna posizione">
+          <button onClick={locate} style={styles.locBtn} title="Aggiorna posizione" aria-label="Aggiorna posizione">
             <Navigation size={14} />
           </button>
         </div>
 
-        <div style={styles.pumpPanel}>
+        <div className="pump-panel" style={styles.pumpPanel}>
           <div style={styles.pumpLabel}>
             {status === "loading" && "AGGIORNAMENTO…"}
             {status === "ok" && cheapest && `PREZZO PIÙ BASSO (${effectivePriceType === "self" ? "SELF" : "SERVITO"}) NELLA ZONA`}
@@ -626,7 +666,7 @@ export default function DistributoreApp() {
             {status === "geolocation_denied" && "CI DISPIACE, POSIZIONE NON DISPONIBILE"}
             {status === "idle" && "IN ATTESA DI POSIZIONE…"}
           </div>
-          <div style={styles.pumpDigits}>
+          <div className="pump-digits" style={styles.pumpDigits}>
             {cheapest && Number.isFinite(odoPrice) ? (
               <>
                 <span>{odoPrice.toFixed(3).replace(".", ",")}</span>
@@ -658,13 +698,15 @@ export default function DistributoreApp() {
       </div>
 
       {/* CONTROLS */}
-      <div style={styles.controls}>
-        <div style={styles.fuelRow}>
+      <main className="app-main">
+      <div className="app-controls" style={styles.controls}>
+        <div className="fuel-row" style={styles.fuelRow} role="group" aria-label="Tipo di carburante">
           {FUELS.map((f) => (
             <button
               key={f.id}
               className="chip"
               onClick={() => setFuel(f.id)}
+              aria-pressed={fuel === f.id}
               style={{
                 ...styles.chip,
                 ...(fuel === f.id ? styles.chipActive : {}),
@@ -675,7 +717,7 @@ export default function DistributoreApp() {
           ))}
         </div>
 
-        <div style={styles.toggleRow}>
+        <div className="toggle-row" style={styles.toggleRow} role="group" aria-label="Tipo di servizio">
           {PRICE_TYPES.map((p) => {
             const disabled = status === "ok" && !priceAvailability[p.id];
             return (
@@ -684,6 +726,7 @@ export default function DistributoreApp() {
                 className="chip"
                 disabled={disabled}
                 onClick={() => setPriceType(p.id)}
+                aria-pressed={effectivePriceType === p.id}
                 title={disabled ? `${p.label} non disponibile in questa zona` : undefined}
                 style={{
                   ...styles.toggleBtn,
@@ -713,6 +756,7 @@ export default function DistributoreApp() {
               value={radius}
               onChange={(e) => setRadius(Number(e.target.value))}
               style={styles.select}
+              aria-label="Raggio di ricerca"
             >
               {RADII.map((r) => (
                 <option key={r} value={r}>
@@ -723,7 +767,7 @@ export default function DistributoreApp() {
             <ChevronDown size={13} color="#8A98AA" style={styles.selectIcon} />
           </div>
 
-          <button onClick={fetchStations} style={styles.refreshBtn} title="Aggiorna prezzi">
+          <button onClick={fetchStations} style={styles.refreshBtn} title="Aggiorna prezzi" aria-label="Aggiorna prezzi">
             <RefreshCw size={13} className={status === "loading" ? "spin" : ""} style={{
               animation: status === "loading" ? "spin 0.8s linear infinite" : "none"
             }} />
@@ -731,12 +775,21 @@ export default function DistributoreApp() {
         </div>
       </div>
 
-      {mapEnabled && status === "ok" && stations.length > 0 && (
-        <StationMap coords={coords} stations={stations} cheapest={cheapest} onMarkerClick={handleMarkerClick} />
-      )}
+      <div className={`results-grid ${!(mapEnabled && status === "ok" && stations.length > 0) ? "results-grid--single" : ""}`}>
+        {mapEnabled && status === "ok" && stations.length > 0 && (
+          <StationMap coords={coords} stations={stations} cheapest={cheapest} onMarkerClick={handleMarkerClick} />
+        )}
 
       {/* LIST */}
-      <div style={styles.list}>
+      <section className="results-pane" aria-labelledby="results-title">
+        <div className="section-heading">
+          <div>
+            <p className="section-eyebrow">Nelle vicinanze</p>
+            <h2 className="section-title" id="results-title">Distributori più vicini</h2>
+          </div>
+          {status === "ok" && <span className="result-count">{stations.length} risultati</span>}
+        </div>
+      <div className="results-list" style={styles.list} aria-live="polite" aria-busy={status === "loading"}>
         {status === "error" && (
           <div style={styles.errorBox}>
             <AlertCircle size={16} color="#D2A24C" />
@@ -787,6 +840,7 @@ export default function DistributoreApp() {
           return (
             <StationCard
               key={i}
+              rank={i + 1}
               cardRef={(el) => {
                 rowRefs.current[i] = el;
               }}
@@ -802,8 +856,11 @@ export default function DistributoreApp() {
           );
         })}
       </div>
+      </section>
+      </div>
+      </main>
 
-      <div style={styles.footer}>
+      <div className="app-footer" style={styles.footer}>
         {lastUpdated && <span>Aggiornato alle {lastUpdated.toLocaleTimeString("it-IT")} · </span>}
         Dati: comunicazioni impianti al MIMIT (art. 51 L.99/2009), estrazione ufficiale giornaliera
         {manifest?.extraction ? ` (${manifest.extraction.replace("Estrazione del ", "")})` : ""}.
@@ -815,7 +872,7 @@ export default function DistributoreApp() {
 const styles = {
   page: {
     minHeight: "100vh",
-    background: "#0F1B2B",
+    background: "radial-gradient(circle at 50% -10%, #1a3149 0, #0f1b2b 34%, #0b1624 100%)",
     color: "#EDE6D6",
     fontFamily: "'Inter', sans-serif",
     maxWidth: 480,
@@ -823,7 +880,7 @@ const styles = {
     paddingBottom: 32,
   },
   hero: {
-    background: "linear-gradient(160deg, #16263B 0%, #0F1B2B 100%)",
+    background: "linear-gradient(160deg, rgba(24,43,65,.98) 0%, rgba(12,25,40,.98) 100%)",
     padding: "20px 20px 26px",
     borderBottom: "1px solid #1C2E45",
   },
@@ -1063,6 +1120,19 @@ const styles = {
     justifyContent: "space-between",
     minHeight: 18,
     marginBottom: 6,
+  },
+  cardRank: {
+    fontSize: 10.5,
+    fontWeight: 700,
+    letterSpacing: "0.45px",
+    color: "#6F839F",
+    textTransform: "uppercase",
+  },
+  cardMeta: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
   },
   badgeCheapest: {
     display: "inline-flex",
