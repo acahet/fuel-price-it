@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "fetch-data": "node scripts/fetch-mimit-data.js",
     "lint:sonar": "eslint --config eslint.sonar.config.mjs src scripts",
-    "quality:duplication": "jscpd --config .jscpd.json"
+    "quality:duplication": "jscpd --config .jscpd.json",
+    "test": "node --test src/stationSelection.test.js src/locationRace.test.js src/geoGrid.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.0",
