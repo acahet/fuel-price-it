@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-10
+
+### Security
+- Upgraded the Vite dev/build toolchain from 5.x to 6.4.4, clearing high and moderate advisories in the dev server's esbuild path and the `vite <=6.4.2` range.
+- Updated transitive `nanoid` and `source-map-js` to patched versions. `npm audit` now reports 0 vulnerabilities (was 4: 1 moderate, 3 high).
+
 ## [1.2.0] - 2026-08-05
 
 ### Added
