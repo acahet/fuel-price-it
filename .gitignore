@@ -33,3 +33,4 @@ public/data/
 # Logs
 logs/
 *.log
+reports/
