@@ -15,6 +15,7 @@ import {
   resolvePriceTypes,
 } from "./stationSelection.js";
 import { supabase } from "./supabaseClient.js";
+import { readString, writeString } from "./preferences.js";
 
 const FUELS = [
   { id: "benzina", label: "Benzina", short: "B" },
@@ -58,9 +59,9 @@ const FAVORITE_FUEL_KEY = "distributore.favoriteFuel";
 const THEME_KEY = "distributore.theme";
 
 function readTheme() {
+  const saved = readString(THEME_KEY);
+  if (saved === "light" || saved === "dark") return saved;
   try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === "light" || saved === "dark") return saved;
     return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   } catch {
     return "light";
@@ -68,21 +69,12 @@ function readTheme() {
 }
 
 function readFavoriteFuel() {
-  try {
-    const saved = localStorage.getItem(FAVORITE_FUEL_KEY);
-    return FUELS.some((f) => f.id === saved) ? saved : null;
-  } catch {
-    // localStorage can throw in private-browsing modes on some browsers — just skip persistence.
-    return null;
-  }
+  const saved = readString(FAVORITE_FUEL_KEY);
+  return FUELS.some((f) => f.id === saved) ? saved : null;
 }
 
 function saveFavoriteFuel(id) {
-  try {
-    localStorage.setItem(FAVORITE_FUEL_KEY, id);
-  } catch {
-    // ignore — see readFavoriteFuel
-  }
+  writeString(FAVORITE_FUEL_KEY, id);
 }
 
 // Universal links (not maps:// / geo: custom schemes) so each also works as a plain
@@ -152,7 +144,7 @@ function StationMap({ coords, stations, cheapest, onMarkerClick, className = "" 
           const isCheapest = s === cheapest;
           return (
             <CircleMarker
-              key={i}
+              key={`${s.id}-${s.self ? "self" : "servito"}`}
               center={[s.latitudine, s.longitudine]}
               radius={isCheapest ? 10 : 8}
               pathOptions={{
@@ -529,11 +521,7 @@ export default function DistributoreApp() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // Theme persistence is optional in restricted browsing modes.
-    }
+    writeString(THEME_KEY, theme);
   }, [theme]);
 
 
@@ -1001,7 +989,7 @@ export default function DistributoreApp() {
           const updatedAt = parseStationDate(s.data);
           return (
             <StationCard
-              key={i}
+              key={`${s.id}-${s.self ? "self" : "servito"}`}
               rank={i + 1}
               cardRef={(el) => {
                 rowRefs.current[i] = el;
