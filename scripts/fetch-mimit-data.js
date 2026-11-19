@@ -13,11 +13,13 @@
 // it has to produce static JSON assets the app fetches same-origin instead.
 
 import { cellKeyFor } from "../src/geoGrid.js";
+import { computeProvinceStats } from "../src/priceStats.js";
 
 const PREZZO_URL = "https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv";
 const ANAGRAFICA_URL = "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv";
 const OUTPUT_DIR = new URL("../public/data/stazioni/", import.meta.url);
 const MANIFEST_PATH = new URL("../public/data/stazioni/index.json", import.meta.url);
+const STATS_PATH = new URL("../public/data/stazioni/stats.json", import.meta.url);
 
 // Matches the fuel set the app has always supported — MIMIT reports several more
 // (Blue Super, Gasolio Premium, HVO, ...) that were already ruled out of scope.
@@ -74,6 +76,7 @@ function buildStations(anagraficaRows, priceByStation) {
       id,
       gestore: (bandiera || "").trim() || "Distributore",
       indirizzo: formatIndirizzo(indirizzo, comune, provincia),
+      provincia: (provincia || "").trim(),
       lat,
       lon,
       prezzi,
@@ -117,6 +120,7 @@ async function main() {
     cellCount: byCell.size,
   };
   await fs.writeFile(MANIFEST_PATH, JSON.stringify(manifest));
+  await fs.writeFile(STATS_PATH, JSON.stringify(computeProvinceStats(stations)));
 
   console.log(
     `Wrote ${stations.length} stations across ${byCell.size} cells to ${OUTPUT_DIR.pathname} (${prezzo.extractionLine})`

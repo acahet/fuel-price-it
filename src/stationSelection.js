@@ -34,6 +34,7 @@ export function expandStations(cellStationLists, fuel, origin, radius) {
     const distanza = haversineKm(origin.lat, origin.lon, s.lat, s.lon);
     if (distanza > radius) return [];
     return Object.entries(fuelPrices).map(([priceKind, info]) => ({
+      id: s.id,
       gestore: s.gestore,
       indirizzo: s.indirizzo,
       latitudine: s.lat,

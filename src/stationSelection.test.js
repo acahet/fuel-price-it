@@ -63,6 +63,7 @@ test("expandStations returns one entry per price type within the radius", () => 
   assert.equal(out.length, 2);
   assert.deepEqual(out.map((s) => s.self).sort(), [false, true]);
   assert.equal(out[0].distanza, 0);
+  assert.ok(out.every((s) => s.id === "near"));
 });
 
 test("expandStations skips stations outside the radius and without the fuel", () => {
